@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -17,24 +18,31 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+type workerOptions struct {
+	configFile     string
+	configDir      string
+	serverAddr     string
+	pollInterval   time.Duration
+	rpcTimeout     time.Duration
+	topic          string
+	batchSize      int32
+	processorCount int
+	queueCapacity  int
+	ackRetry       int
+}
+
 func main() {
-	var (
-		configFile = flag.String("config", "", "Path to config file, e.g. ./config/config.yaml")
-		configDir  = flag.String("config-dir", "", "Directory containing config.yaml")
-		serverAddr = flag.String("server-addr", "", "gRPC server address, e.g. localhost:9090")
-		tick       = flag.Duration("poll-interval", time.Second, "Polling interval for Retrieve requests")
-	)
-	flag.Parse()
+	opts := parseFlags()
 
 	cfg, err := conf.LoadWithOptions(conf.LoadOptions{
-		ConfigFile: *configFile,
-		ConfigDir:  *configDir,
+		ConfigFile: opts.configFile,
+		ConfigDir:  opts.configDir,
 	})
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	grpcAddr := *serverAddr
+	grpcAddr := opts.serverAddr
 	if grpcAddr == "" {
 		grpcAddr = fmt.Sprintf("localhost:%d", cfg.Server.GrpcPort)
 	}
@@ -50,52 +58,197 @@ func main() {
 	}()
 
 	client := pb.NewDelayQueueServiceClient(conn)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	taskCh := make(chan *pb.Task, opts.queueCapacity)
+	stopFetcher := make(chan struct{})
 
-	log.Printf("Worker started, polling %s", grpcAddr)
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-
+	var fetchWG sync.WaitGroup
+	fetchWG.Add(1)
 	go func() {
-		defer wg.Done()
-		ticker := time.NewTicker(*tick)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				resp, err := client.Retrieve(ctx, &pb.RetrieveRequest{
-					Topic:     "default",
-					BatchSize: 10,
-				})
-				if err != nil {
-					log.Printf("retrieve failed: %v", err)
-					continue
-				}
-
-				for _, task := range resp.Tasks {
-					log.Printf("[EXECUTE] task=%s payload=%s", task.Id, task.Payload)
-
-					if _, ackErr := client.Ack(ctx, &pb.AckRequest{Id: task.Id}); ackErr != nil {
-						log.Printf("[ERROR] ack failed task=%s err=%v", task.Id, ackErr)
-						continue
-					}
-					log.Printf("[ACK] task=%s", task.Id)
-				}
-			}
-		}
+		defer fetchWG.Done()
+		runFetcher(client, opts, taskCh, stopFetcher)
 	}()
+
+	var procWG sync.WaitGroup
+	for i := 0; i < opts.processorCount; i++ {
+		procWG.Add(1)
+		go func(workerID int) {
+			defer procWG.Done()
+			runProcessor(workerID, client, opts, taskCh)
+		}(i + 1)
+	}
+
+	log.Printf(
+		"Worker started: server=%s processors=%d queue_capacity=%d batch_size=%d topic=%s",
+		grpcAddr,
+		opts.processorCount,
+		opts.queueCapacity,
+		opts.batchSize,
+		opts.topic,
+	)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	defer signal.Stop(quit)
 
-	log.Println("Worker shutting down...")
-	cancel()
-	wg.Wait()
-	log.Println("Worker stopped")
+	<-quit
+	log.Println("Shutdown signal received, stopping fetcher...")
+	close(stopFetcher)
+
+	// 1) Stop pull loop first.
+	fetchWG.Wait()
+	// 2) Then let processors drain queued/in-flight tasks.
+	close(taskCh)
+	// 3) Exit only after all Ack/Nack paths are finished.
+	procWG.Wait()
+
+	log.Println("Worker stopped gracefully")
+}
+
+func parseFlags() workerOptions {
+	var opts workerOptions
+	batchSize := 10
+
+	flag.StringVar(&opts.configFile, "config", "", "Path to config file, e.g. ./config/config.yaml")
+	flag.StringVar(&opts.configDir, "config-dir", "", "Directory containing config.yaml")
+	flag.StringVar(&opts.serverAddr, "server-addr", "", "gRPC server address, e.g. localhost:9090")
+	flag.DurationVar(&opts.pollInterval, "poll-interval", time.Second, "Fetcher poll interval for Retrieve")
+	flag.DurationVar(&opts.rpcTimeout, "rpc-timeout", 5*time.Second, "Timeout for each Retrieve/Ack/Nack RPC")
+	flag.StringVar(&opts.topic, "topic", "default", "Retrieve topic")
+	flag.IntVar(&batchSize, "batch-size", 10, "Retrieve batch size per fetch")
+	flag.IntVar(&opts.processorCount, "processors", 4, "Number of concurrent processors")
+	flag.IntVar(&opts.queueCapacity, "queue-capacity", 128, "Buffered task queue capacity")
+	flag.IntVar(&opts.ackRetry, "ack-retry", 3, "Max retries for Ack/Nack RPC")
+	flag.Parse()
+
+	opts.batchSize = int32(batchSize)
+	if opts.batchSize <= 0 {
+		opts.batchSize = 10
+	}
+	if opts.pollInterval <= 0 {
+		opts.pollInterval = time.Second
+	}
+	if opts.rpcTimeout <= 0 {
+		opts.rpcTimeout = 5 * time.Second
+	}
+	if opts.processorCount <= 0 {
+		opts.processorCount = 1
+	}
+	if opts.queueCapacity <= 0 {
+		opts.queueCapacity = opts.processorCount
+	}
+	if opts.ackRetry <= 0 {
+		opts.ackRetry = 1
+	}
+
+	return opts
+}
+
+func runFetcher(client pb.DelayQueueServiceClient, opts workerOptions, taskCh chan<- *pb.Task, stop <-chan struct{}) {
+	ticker := time.NewTicker(opts.pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stop:
+			log.Println("Fetcher stopped")
+			return
+		default:
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), opts.rpcTimeout)
+		resp, err := client.Retrieve(ctx, &pb.RetrieveRequest{
+			Topic:     opts.topic,
+			BatchSize: opts.batchSize,
+		})
+		cancel()
+		if err != nil {
+			log.Printf("fetcher retrieve failed: %v", err)
+		} else {
+			for _, task := range resp.Tasks {
+				// Bounded channel provides backpressure and capacity control.
+				taskCh <- task
+			}
+		}
+
+		select {
+		case <-stop:
+			log.Println("Fetcher stopped")
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func runProcessor(workerID int, client pb.DelayQueueServiceClient, opts workerOptions, taskCh <-chan *pb.Task) {
+	for task := range taskCh {
+		log.Printf("[PROCESSOR-%d] execute task=%s topic=%s", workerID, task.Id, task.Topic)
+
+		err := executeTask(task)
+		if err != nil {
+			if nackErr := nackWithRetry(client, task, opts.rpcTimeout, opts.ackRetry); nackErr != nil {
+				log.Printf("[PROCESSOR-%d] nack failed task=%s err=%v", workerID, task.Id, nackErr)
+			} else {
+				log.Printf("[PROCESSOR-%d] nack task=%s", workerID, task.Id)
+			}
+			continue
+		}
+
+		if ackErr := ackWithRetry(client, task.Id, opts.rpcTimeout, opts.ackRetry); ackErr != nil {
+			log.Printf("[PROCESSOR-%d] ack failed task=%s err=%v", workerID, task.Id, ackErr)
+			continue
+		}
+		log.Printf("[PROCESSOR-%d] ack task=%s", workerID, task.Id)
+	}
+
+	log.Printf("[PROCESSOR-%d] stopped", workerID)
+}
+
+func executeTask(task *pb.Task) error {
+	// Placeholder for business logic execution.
+	log.Printf("[EXECUTE] task=%s payload=%s", task.Id, task.Payload)
+	return nil
+}
+
+func ackWithRetry(client pb.DelayQueueServiceClient, id string, timeout time.Duration, maxRetry int) error {
+	var lastErr error
+	for i := 0; i < maxRetry; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		_, err := client.Ack(ctx, &pb.AckRequest{Id: id})
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("ack task %s failed after %d retries: %w", id, maxRetry, lastErr)
+}
+
+func nackWithRetry(client pb.DelayQueueServiceClient, task *pb.Task, timeout time.Duration, maxRetry int) error {
+	if task == nil {
+		return errors.New("nil task")
+	}
+
+	req := &pb.NackRequest{
+		Id:          task.Id,
+		Topic:       task.Topic,
+		Payload:     task.Payload,
+		ExecuteTime: task.ExecuteTime,
+		RetryCount:  task.RetryCount,
+		MaxRetries:  task.MaxRetries,
+		CreatedAt:   task.CreatedAt,
+	}
+
+	var lastErr error
+	for i := 0; i < maxRetry; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		_, err := client.Nack(ctx, req)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("nack task %s failed after %d retries: %w", task.Id, maxRetry, lastErr)
 }
