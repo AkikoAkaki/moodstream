@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -9,80 +11,91 @@ import (
 	"syscall"
 	"time"
 
+	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
 	"github.com/AkikoAkaki/async-task-platform/internal/conf"
-	"github.com/AkikoAkaki/async-task-platform/internal/storage/redis"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 func main() {
-	// 1. 加载配置
-	cfg, err := conf.Load("./config")
+	var (
+		configFile = flag.String("config", "", "Path to config file, e.g. ./config/config.yaml")
+		configDir  = flag.String("config-dir", "", "Directory containing config.yaml")
+		serverAddr = flag.String("server-addr", "", "gRPC server address, e.g. localhost:9090")
+		tick       = flag.Duration("poll-interval", time.Second, "Polling interval for Retrieve requests")
+	)
+	flag.Parse()
+
+	cfg, err := conf.LoadWithOptions(conf.LoadOptions{
+		ConfigFile: *configFile,
+		ConfigDir:  *configDir,
+	})
 	if err != nil {
-		cfg, err = conf.Load("../../config")
-		if err != nil {
-			log.Fatalf("failed to load config: %v", err)
-		}
+		log.Fatalf("failed to load config: %v", err)
 	}
 
-	// 2. 使用配置连接 Redis
-	store := redis.NewStore(cfg.Redis.Addr)
+	grpcAddr := *serverAddr
+	if grpcAddr == "" {
+		grpcAddr = fmt.Sprintf("localhost:%d", cfg.Server.GrpcPort)
+	}
 
+	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("failed to connect to server: %v", err)
+	}
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil {
+			log.Printf("failed to close grpc connection: %v", closeErr)
+		}
+	}()
+
+	client := pb.NewDelayQueueServiceClient(conn)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	log.Println("Worker started, polling for tasks...")
+	log.Printf("Worker started, polling %s", grpcAddr)
 
-	// 使用 WaitGroup 保证退出时处理完当前 Loop
 	var wg sync.WaitGroup
 	wg.Add(1)
 
 	go func() {
 		defer wg.Done()
-		ticker := time.NewTicker(1 * time.Second) // 轮询间隔 1秒
+		ticker := time.NewTicker(*tick)
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-ctx.Done():
-				// 收到停止信号，退出循环
 				return
 			case <-ticker.C:
-				// 1. 拉取任务
-				tasks, err := store.FetchAndHold(ctx, "default", 10)
+				resp, err := client.Retrieve(ctx, &pb.RetrieveRequest{
+					Topic:     "default",
+					BatchSize: 10,
+				})
 				if err != nil {
-					log.Printf("Error polling tasks: %v", err)
+					log.Printf("retrieve failed: %v", err)
 					continue
 				}
 
-				// 2. 执行任务 (MVP: 仅打印)
-				if len(tasks) > 0 {
-					log.Printf("--- Processed %d tasks ---", len(tasks))
-					for _, t := range tasks {
-						// 工业级：这里应该扔给一个 Worker Pool 线程池去并发执行，而不是串行阻塞
-						log.Printf("[EXECUTE] TaskID: %s, Payload: %s, Delay: %ds",
-							t.Id, t.Payload, time.Now().Unix()-t.ExecuteTime)
+				for _, task := range resp.Tasks {
+					log.Printf("[EXECUTE] task=%s payload=%s", task.Id, task.Payload)
 
-						// 3. 任务执行成功后，调用 Ack 确认完成
-						// @Critical: 如果不调用 Ack，任务会永远停留在 Running 状态，
-						// 最终被 Watchdog 认为超时并重新入队，导致重复执行。
-						if err := store.Ack(ctx, t.Id); err != nil {
-							log.Printf("[ERROR] Ack failed for task %s: %v", t.Id, err)
-							// 注意：Ack 失败意味着任务状态不一致，Watchdog 会恢复它
-						} else {
-							log.Printf("[ACK] Task %s completed successfully", t.Id)
-						}
+					if _, ackErr := client.Ack(ctx, &pb.AckRequest{Id: task.Id}); ackErr != nil {
+						log.Printf("[ERROR] ack failed task=%s err=%v", task.Id, ackErr)
+						continue
 					}
+					log.Printf("[ACK] task=%s", task.Id)
 				}
 			}
 		}
 	}()
 
-	// 优雅退出监听
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	log.Println("Worker shutting down...")
-	cancel()  // 通知 Loop 停止
-	wg.Wait() // 等待 Loop 彻底结束
+	cancel()
+	wg.Wait()
 	log.Println("Worker stopped")
 }

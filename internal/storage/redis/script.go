@@ -50,6 +50,55 @@ else
 end
 `
 
+// luaEnqueueWithIdempotency 支持幂等性的任务入队操作
+// @Logic
+// 1. 如果提供了 idempotency_key，先检查是否已存在
+// 2. 如果存在，直接返回已有的 task_id（幂等）
+// 3. 如果不存在，创建新任务并保存幂等性映射
+//
+// @Parameters
+// KEYS[1]: Pending ZSet (ddq:tasks)
+// KEYS[2]: Idempotency key prefix (ddq:idempotency:)
+// ARGV[1]: Task JSON
+// ARGV[2]: Execute time (score)
+// ARGV[3]: Task ID
+// ARGV[4]: Idempotency key (空字符串表示不启用幂等性)
+// ARGV[5]: TTL for idempotency key (seconds, e.g., 86400 for 24 hours)
+//
+// @Returns
+// string: task_id (新创建的或已存在的)
+const luaEnqueueWithIdempotency = `
+local pending_key = KEYS[1]
+local idempotency_prefix = KEYS[2]
+local task_json = ARGV[1]
+local score = tonumber(ARGV[2])
+local task_id = ARGV[3]
+local idempotency_key = ARGV[4]
+local ttl = tonumber(ARGV[5])
+
+-- 1. 如果提供了幂等性 key，先检查是否已存在
+if idempotency_key ~= "" then
+    local idempotency_redis_key = idempotency_prefix .. idempotency_key
+    local existing_id = redis.call('GET', idempotency_redis_key)
+    
+    if existing_id then
+        -- 任务已存在，直接返回已有的 task_id（幂等）
+        return existing_id
+    end
+end
+
+-- 2. 任务不存在，创建新任务
+redis.call('ZADD', pending_key, score, task_json)
+
+-- 3. 如果提供了幂等性 key，保存映射关系
+if idempotency_key ~= "" then
+    local idempotency_redis_key = idempotency_prefix .. idempotency_key
+    redis.call('SET', idempotency_redis_key, task_id, 'EX', ttl)
+end
+
+return task_id
+`
+
 // luaAck 确认任务完成
 // KEYS[1]: Running Hash (ddq:running)
 // ARGV[1]: TaskID
@@ -95,6 +144,48 @@ end
 
 return 1
 `
+
+// luaDelete 删除任务（支持从 Pending 或 Running 删除）
+// @Logic
+// 1. 扫描 Pending ZSet，找到匹配 ID 的任务并删除
+// 2. 如果在 Running Hash 中，也删除
+// 3. 返回删除的任务数量（0或1）
+//
+// @Parameters
+// KEYS[1]: Pending ZSet (ddq:tasks)
+// KEYS[2]: Running Hash (ddq:running)
+// ARGV[1]: TaskID
+//
+// @Returns
+// int: 删除的任务数量（0=任务不存在，1=成功删除）
+const luaDelete = `
+local pending_key = KEYS[1]
+local running_key = KEYS[2]
+local task_id = ARGV[1]
+
+local deleted = 0
+
+-- 1. 从 Pending 中查找并删除
+-- 由于 ZSet 的成员是 JSON 字符串，我们需要遍历找到包含该 ID 的元素
+local all_tasks = redis.call('ZRANGE', pending_key, 0, -1)
+for i, task_json in ipairs(all_tasks) do
+    local task = cjson.decode(task_json)
+    if task.id == task_id then
+        redis.call('ZREM', pending_key, task_json)
+        deleted = 1
+        break
+    end
+end
+
+-- 2. 从 Running 中删除（如果存在）
+local removed = redis.call('HDEL', running_key, task_id)
+if removed == 1 then
+    deleted = 1
+end
+
+return deleted
+`
+
 
 // luaRecover 扫描并恢复超时任务
 // 逻辑：

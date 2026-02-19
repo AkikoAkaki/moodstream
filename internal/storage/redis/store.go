@@ -16,10 +16,11 @@ import (
 // Store 实现了 storage.JobStore 接口，作为任务持久化的 Redis 适配器。
 // @ThreadSafe: redis.Client 本身并发安全，Store 实例支持多协程共用。
 type Store struct {
-	client     *redis.Client // Redis 官方 Golang 客户端
-	pendingKey string        // 待处理任务的 Key 名称（业务隔离前缀）ZSet: ddq tasks
-	runningKey string        // 正在处理任务的 Key 名称（业务隔离前缀）Hash: ddq running
-	dlqKey     string        // 死信队列 Key 名称（业务隔离前缀）List: ddq dlq
+	client           *redis.Client // Redis 官方 Golang 客户端
+	pendingKey       string        // 待处理任务的 Key 名称（业务隔离前缀）ZSet: ddq tasks
+	runningKey       string        // 正在处理任务的 Key 名称（业务隔离前缀）Hash: ddq running
+	dlqKey           string        // 死信队列 Key 名称（业务隔离前缀）List: ddq dlq
+	idempotencyPrefix string       // 幂等性键前缀：ddq:idempotency:
 }
 
 // GetClient 返回底层的 Redis 客户端实例。
@@ -38,10 +39,11 @@ func NewStore(addr string) *Store {
 		Addr: addr,
 	})
 	return &Store{
-		client:     rdb,
-		pendingKey: "ddq:tasks",   // Default namespace
-		runningKey: "ddq:running", // Default namespace
-		dlqKey:     "ddq:dlq",
+		client:           rdb,
+		pendingKey:       "ddq:tasks",       // Default namespace
+		runningKey:       "ddq:running",     // Default namespace
+		dlqKey:           "ddq:dlq",
+		idempotencyPrefix: "ddq:idempotency:", // Idempotency key prefix
 	}
 }
 
@@ -49,6 +51,14 @@ func NewStore(addr string) *Store {
 // @Algorithm: 基于 ZSet(Sorted Set) 实现，Score 为任务预定的执行 Unix 时间戳。
 // @Complexity: O(log(N))，N 为队列中待处理任务的总数。
 func (s *Store) Add(ctx context.Context, task *pb.Task) error {
+	return s.AddWithIdempotency(ctx, task, "")
+}
+
+// AddWithIdempotency 将延时任务持久化至 Redis，支持幂等性。
+// @Description 如果提供 idempotencyKey，则相同 key 的请求只会创建一次任务。
+// @Param idempotencyKey: 幂等性键，空字符串表示不启用幂等性。
+// @Returns: 如果是幂等请求且任务已存在，返回已有任务的 ID（通过修改 task.Id）
+func (s *Store) AddWithIdempotency(ctx context.Context, task *pb.Task, idempotencyKey string) error {
 	// 1. 序列化：使用标准 JSON 格式。
 	// @Note: 追求性能时可替换为 Protobuf 二进制序列化以减少 Redis 内存占用。
 	bytes, err := json.Marshal(task)
@@ -56,15 +66,27 @@ func (s *Store) Add(ctx context.Context, task *pb.Task) error {
 		return fmt.Errorf("marshal task: %w", err)
 	}
 
-	// 2. 构造有序集合成员。
-	member := redis.Z{
-		Score:  float64(task.ExecuteTime), // 排序权重：执行时间戳
-		Member: bytes,                     // 存储载体：任务快照
+	// 2. 使用 Lua 脚本执行幂等性入队
+	const idempotencyTTL = 86400 // 24 小时
+	
+	result, err := s.client.Eval(ctx, luaEnqueueWithIdempotency,
+		[]string{s.pendingKey, s.idempotencyPrefix},  // KEYS
+		string(bytes), task.ExecuteTime, task.Id, idempotencyKey, idempotencyTTL, // ARGV
+	).Result()
+
+	if err != nil {
+		return fmt.Errorf("redis eval enqueue failed: %w", err)
 	}
 
-	// 3. 执行写入：若写入失败需向上层抛出 Error 由 Service 层决定重试逻辑。
-	if err := s.client.ZAdd(ctx, s.pendingKey, member).Err(); err != nil {
-		return fmt.Errorf("redis zadd failed: %w", err)
+	// 3. 获取返回的 task_id（可能是新创建的，也可能是已存在的）
+	returnedID, ok := result.(string)
+	if !ok {
+		return fmt.Errorf("unexpected result type from lua script: %T", result)
+	}
+
+	// 4. 如果是幂等请求且任务已存在，更新 task.Id 为已存在的 ID
+	if idempotencyKey != "" && returnedID != task.Id {
+		task.Id = returnedID
 	}
 
 	return nil
@@ -113,11 +135,27 @@ func (s *Store) FetchAndHold(ctx context.Context, topic string, limit int64) ([]
 	return tasks, nil
 }
 
-// Remove 根据任务 ID 删除未到期的任务。
-// @Status: Unimplemented (MVP Phase)
-// @Warning: 当前 ZSet 结构不支持基于 ID 的 O(1) 检索，需引入 ID->Payload 的索引映射。
+// Remove 根据任务 ID 删除任务（支持删除 Pending 和 Running 状态的任务）。
+// @Description 使用 Lua 脚本保证原子性，会从 Pending ZSet 和 Running Hash 中查找并删除匹配的任务。
+// @Complexity O(N) where N is the number of pending tasks (due to ZRANGE scan)
+// @Optimization 未来可以引入 Hash 索引 (ddq:meta:{id}) 来实现 O(1) 删除
 func (s *Store) Remove(ctx context.Context, id string) error {
-	return fmt.Errorf("not implemented")
+	result, err := s.client.Eval(ctx, luaDelete,
+		[]string{s.pendingKey, s.runningKey},
+		id,
+	).Result()
+
+	if err != nil {
+		return fmt.Errorf("delete task failed: %w", err)
+	}
+
+	// 检查是否真的删除了任务
+	deleted, ok := result.(int64)
+	if !ok || deleted == 0 {
+		return fmt.Errorf("task not found: %s", id)
+	}
+
+	return nil
 }
 
 // Ack 实现

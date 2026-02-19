@@ -7,12 +7,11 @@
 package pb
 
 import (
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
-
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -24,14 +23,15 @@ const (
 
 // EnqueueRequest 任务提交请求参数。
 type EnqueueRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Topic         string                 `protobuf:"bytes,1,opt,name=topic,proto3" json:"topic,omitempty"`                                    // 业务主题 (如 "order_cancel")
-	Payload       string                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`                                // 任务载荷 (JSON string)
-	DelaySeconds  int64                  `protobuf:"varint,3,opt,name=delay_seconds,json=delaySeconds,proto3" json:"delay_seconds,omitempty"` // 延迟时间 (秒)
-	Id            string                 `protobuf:"bytes,4,opt,name=id,proto3" json:"id,omitempty"`                                          // 客户端指定的唯一ID，若为空则由服务端生成
-	MaxRetries    int32                  `protobuf:"varint,5,opt,name=max_retries,json=maxRetries,proto3" json:"max_retries,omitempty"`       // 允许客户端指定最大重试次数，如果不传则使用系统默认
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Topic          string                 `protobuf:"bytes,1,opt,name=topic,proto3" json:"topic,omitempty"`                                         // 业务主题 (如 "order_cancel")
+	Payload        string                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`                                     // 任务载荷 (JSON string)
+	DelaySeconds   int64                  `protobuf:"varint,3,opt,name=delay_seconds,json=delaySeconds,proto3" json:"delay_seconds,omitempty"`      // 延迟时间 (秒)
+	Id             string                 `protobuf:"bytes,4,opt,name=id,proto3" json:"id,omitempty"`                                               // 客户端指定的唯一ID，若为空则由服务端生成
+	MaxRetries     int32                  `protobuf:"varint,5,opt,name=max_retries,json=maxRetries,proto3" json:"max_retries,omitempty"`            // 允许客户端指定最大重试次数，如果不传则使用系统默认
+	IdempotencyKey string                 `protobuf:"bytes,6,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"` // 幂等性键，相同 key 的请求只会创建一次任务
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *EnqueueRequest) Reset() {
@@ -97,6 +97,13 @@ func (x *EnqueueRequest) GetMaxRetries() int32 {
 		return x.MaxRetries
 	}
 	return 0
+}
+
+func (x *EnqueueRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
 }
 
 type EnqueueResponse struct {
@@ -343,6 +350,230 @@ func (x *DeleteResponse) GetSuccess() bool {
 	return false
 }
 
+type AckRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // 任务ID
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AckRequest) Reset() {
+	*x = AckRequest{}
+	mi := &file_api_proto_queue_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AckRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AckRequest) ProtoMessage() {}
+
+func (x *AckRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_queue_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AckRequest.ProtoReflect.Descriptor instead.
+func (*AckRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_queue_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *AckRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type AckResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AckResponse) Reset() {
+	*x = AckResponse{}
+	mi := &file_api_proto_queue_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AckResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AckResponse) ProtoMessage() {}
+
+func (x *AckResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_queue_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AckResponse.ProtoReflect.Descriptor instead.
+func (*AckResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_queue_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *AckResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+type NackRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                       // 任务ID
+	Topic         string                 `protobuf:"bytes,2,opt,name=topic,proto3" json:"topic,omitempty"`                                 // 任务主题（用于重新入队）
+	Payload       string                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`                             // 任务载荷
+	ExecuteTime   int64                  `protobuf:"varint,4,opt,name=execute_time,json=executeTime,proto3" json:"execute_time,omitempty"` // 执行时间
+	RetryCount    int32                  `protobuf:"varint,5,opt,name=retry_count,json=retryCount,proto3" json:"retry_count,omitempty"`    // 重试次数
+	MaxRetries    int32                  `protobuf:"varint,6,opt,name=max_retries,json=maxRetries,proto3" json:"max_retries,omitempty"`    // 最大重试次数
+	CreatedAt     int64                  `protobuf:"varint,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`       // 创建时间
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NackRequest) Reset() {
+	*x = NackRequest{}
+	mi := &file_api_proto_queue_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NackRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NackRequest) ProtoMessage() {}
+
+func (x *NackRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_queue_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NackRequest.ProtoReflect.Descriptor instead.
+func (*NackRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_queue_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *NackRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *NackRequest) GetTopic() string {
+	if x != nil {
+		return x.Topic
+	}
+	return ""
+}
+
+func (x *NackRequest) GetPayload() string {
+	if x != nil {
+		return x.Payload
+	}
+	return ""
+}
+
+func (x *NackRequest) GetExecuteTime() int64 {
+	if x != nil {
+		return x.ExecuteTime
+	}
+	return 0
+}
+
+func (x *NackRequest) GetRetryCount() int32 {
+	if x != nil {
+		return x.RetryCount
+	}
+	return 0
+}
+
+func (x *NackRequest) GetMaxRetries() int32 {
+	if x != nil {
+		return x.MaxRetries
+	}
+	return 0
+}
+
+func (x *NackRequest) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+type NackResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NackResponse) Reset() {
+	*x = NackResponse{}
+	mi := &file_api_proto_queue_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NackResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NackResponse) ProtoMessage() {}
+
+func (x *NackResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_queue_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NackResponse.ProtoReflect.Descriptor instead.
+func (*NackResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_queue_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *NackResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
 // Task 核心任务模型
 type Task struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -359,7 +590,7 @@ type Task struct {
 
 func (x *Task) Reset() {
 	*x = Task{}
-	mi := &file_api_proto_queue_proto_msgTypes[6]
+	mi := &file_api_proto_queue_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -371,7 +602,7 @@ func (x *Task) String() string {
 func (*Task) ProtoMessage() {}
 
 func (x *Task) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_queue_proto_msgTypes[6]
+	mi := &file_api_proto_queue_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -384,7 +615,7 @@ func (x *Task) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Task.ProtoReflect.Descriptor instead.
 func (*Task) Descriptor() ([]byte, []int) {
-	return file_api_proto_queue_proto_rawDescGZIP(), []int{6}
+	return file_api_proto_queue_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Task) GetId() string {
@@ -440,14 +671,15 @@ var File_api_proto_queue_proto protoreflect.FileDescriptor
 
 const file_api_proto_queue_proto_rawDesc = "" +
 	"\n" +
-	"\x15api/proto/queue.proto\x12\tapi.queue\"\x96\x01\n" +
+	"\x15api/proto/queue.proto\x12\tapi.queue\"\xbf\x01\n" +
 	"\x0eEnqueueRequest\x12\x14\n" +
 	"\x05topic\x18\x01 \x01(\tR\x05topic\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\tR\apayload\x12#\n" +
 	"\rdelay_seconds\x18\x03 \x01(\x03R\fdelaySeconds\x12\x0e\n" +
 	"\x02id\x18\x04 \x01(\tR\x02id\x12\x1f\n" +
 	"\vmax_retries\x18\x05 \x01(\x05R\n" +
-	"maxRetries\"`\n" +
+	"maxRetries\x12'\n" +
+	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\"`\n" +
 	"\x0fEnqueueResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12#\n" +
@@ -461,6 +693,24 @@ const file_api_proto_queue_proto_rawDesc = "" +
 	"\rDeleteRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"*\n" +
 	"\x0eDeleteResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x1c\n" +
+	"\n" +
+	"AckRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"'\n" +
+	"\vAckResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xd1\x01\n" +
+	"\vNackRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05topic\x18\x02 \x01(\tR\x05topic\x12\x18\n" +
+	"\apayload\x18\x03 \x01(\tR\apayload\x12!\n" +
+	"\fexecute_time\x18\x04 \x01(\x03R\vexecuteTime\x12\x1f\n" +
+	"\vretry_count\x18\x05 \x01(\x05R\n" +
+	"retryCount\x12\x1f\n" +
+	"\vmax_retries\x18\x06 \x01(\x05R\n" +
+	"maxRetries\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\a \x01(\x03R\tcreatedAt\"(\n" +
+	"\fNackResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xca\x01\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
@@ -472,11 +722,13 @@ const file_api_proto_queue_proto_rawDesc = "" +
 	"\vmax_retries\x18\x06 \x01(\x05R\n" +
 	"maxRetries\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\a \x01(\x03R\tcreatedAt2\xd9\x01\n" +
+	"created_at\x18\a \x01(\x03R\tcreatedAt2\xc8\x02\n" +
 	"\x11DelayQueueService\x12@\n" +
 	"\aEnqueue\x12\x19.api.queue.EnqueueRequest\x1a\x1a.api.queue.EnqueueResponse\x12C\n" +
 	"\bRetrieve\x12\x1a.api.queue.RetrieveRequest\x1a\x1b.api.queue.RetrieveResponse\x12=\n" +
-	"\x06Delete\x12\x18.api.queue.DeleteRequest\x1a\x19.api.queue.DeleteResponseB8Z6github.com/AkikoAkaki/async-task-platform/api/proto;pbb\x06proto3"
+	"\x06Delete\x12\x18.api.queue.DeleteRequest\x1a\x19.api.queue.DeleteResponse\x124\n" +
+	"\x03Ack\x12\x15.api.queue.AckRequest\x1a\x16.api.queue.AckResponse\x127\n" +
+	"\x04Nack\x12\x16.api.queue.NackRequest\x1a\x17.api.queue.NackResponseB8Z6github.com/AkikoAkaki/async-task-platform/api/proto;pbb\x06proto3"
 
 var (
 	file_api_proto_queue_proto_rawDescOnce sync.Once
@@ -490,7 +742,7 @@ func file_api_proto_queue_proto_rawDescGZIP() []byte {
 	return file_api_proto_queue_proto_rawDescData
 }
 
-var file_api_proto_queue_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_api_proto_queue_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_api_proto_queue_proto_goTypes = []any{
 	(*EnqueueRequest)(nil),   // 0: api.queue.EnqueueRequest
 	(*EnqueueResponse)(nil),  // 1: api.queue.EnqueueResponse
@@ -498,21 +750,29 @@ var file_api_proto_queue_proto_goTypes = []any{
 	(*RetrieveResponse)(nil), // 3: api.queue.RetrieveResponse
 	(*DeleteRequest)(nil),    // 4: api.queue.DeleteRequest
 	(*DeleteResponse)(nil),   // 5: api.queue.DeleteResponse
-	(*Task)(nil),             // 6: api.queue.Task
+	(*AckRequest)(nil),       // 6: api.queue.AckRequest
+	(*AckResponse)(nil),      // 7: api.queue.AckResponse
+	(*NackRequest)(nil),      // 8: api.queue.NackRequest
+	(*NackResponse)(nil),     // 9: api.queue.NackResponse
+	(*Task)(nil),             // 10: api.queue.Task
 }
 var file_api_proto_queue_proto_depIdxs = []int32{
-	6, // 0: api.queue.RetrieveResponse.tasks:type_name -> api.queue.Task
-	0, // 1: api.queue.DelayQueueService.Enqueue:input_type -> api.queue.EnqueueRequest
-	2, // 2: api.queue.DelayQueueService.Retrieve:input_type -> api.queue.RetrieveRequest
-	4, // 3: api.queue.DelayQueueService.Delete:input_type -> api.queue.DeleteRequest
-	1, // 4: api.queue.DelayQueueService.Enqueue:output_type -> api.queue.EnqueueResponse
-	3, // 5: api.queue.DelayQueueService.Retrieve:output_type -> api.queue.RetrieveResponse
-	5, // 6: api.queue.DelayQueueService.Delete:output_type -> api.queue.DeleteResponse
-	4, // [4:7] is the sub-list for method output_type
-	1, // [1:4] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	10, // 0: api.queue.RetrieveResponse.tasks:type_name -> api.queue.Task
+	0,  // 1: api.queue.DelayQueueService.Enqueue:input_type -> api.queue.EnqueueRequest
+	2,  // 2: api.queue.DelayQueueService.Retrieve:input_type -> api.queue.RetrieveRequest
+	4,  // 3: api.queue.DelayQueueService.Delete:input_type -> api.queue.DeleteRequest
+	6,  // 4: api.queue.DelayQueueService.Ack:input_type -> api.queue.AckRequest
+	8,  // 5: api.queue.DelayQueueService.Nack:input_type -> api.queue.NackRequest
+	1,  // 6: api.queue.DelayQueueService.Enqueue:output_type -> api.queue.EnqueueResponse
+	3,  // 7: api.queue.DelayQueueService.Retrieve:output_type -> api.queue.RetrieveResponse
+	5,  // 8: api.queue.DelayQueueService.Delete:output_type -> api.queue.DeleteResponse
+	7,  // 9: api.queue.DelayQueueService.Ack:output_type -> api.queue.AckResponse
+	9,  // 10: api.queue.DelayQueueService.Nack:output_type -> api.queue.NackResponse
+	6,  // [6:11] is the sub-list for method output_type
+	1,  // [1:6] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_queue_proto_init() }
@@ -526,7 +786,7 @@ func file_api_proto_queue_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_queue_proto_rawDesc), len(file_api_proto_queue_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
