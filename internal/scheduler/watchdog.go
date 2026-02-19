@@ -2,7 +2,9 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,10 +15,12 @@ import (
 
 // Watchdog periodically checks and recovers expired running tasks.
 type Watchdog struct {
-	store    storage.JobStore
-	interval time.Duration
-	timeout  int64
-	maxRetry int32
+	store     storage.JobStore
+	interval  time.Duration
+	timeout   int64
+	maxRetry  int32
+	leaderID  string
+	leaderTTL time.Duration
 
 	quit chan struct{}
 	wg   sync.WaitGroup
@@ -36,12 +40,24 @@ func NewWatchdog(cfg conf.QueueConfig, store storage.JobStore) *Watchdog {
 		visibilityTimeout = 60
 	}
 
+	interval := time.Duration(cfg.WatchdogInterval) * time.Second
+	if interval <= 0 {
+		interval = time.Second
+	}
+
+	leaderTTL := interval + 5*time.Second
+	if leaderTTL < 10*time.Second {
+		leaderTTL = 10 * time.Second
+	}
+
 	return &Watchdog{
-		store:    store,
-		interval: time.Duration(cfg.WatchdogInterval) * time.Second,
-		timeout:  int64(visibilityTimeout),
-		maxRetry: int32(maxRetries),
-		quit:     make(chan struct{}),
+		store:     store,
+		interval:  interval,
+		timeout:   int64(visibilityTimeout),
+		maxRetry:  int32(maxRetries),
+		leaderID:  buildLeaderID(),
+		leaderTTL: leaderTTL,
+		quit:      make(chan struct{}),
 	}
 }
 
@@ -85,7 +101,35 @@ func (w *Watchdog) recover() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	if !w.tryAcquireLeadership(ctx) {
+		return
+	}
+
 	if err := w.store.CheckAndMoveExpired(ctx, w.timeout, w.maxRetry); err != nil {
 		log.Printf("Watchdog recover error: %v", err)
 	}
+}
+
+func (w *Watchdog) tryAcquireLeadership(ctx context.Context) bool {
+	elector, ok := w.store.(storage.WatchdogLeaderElector)
+	if !ok {
+		// Backward-compatible path for stores without election support.
+		return true
+	}
+
+	leader, err := elector.TryAcquireWatchdogLeader(ctx, w.leaderID, w.leaderTTL)
+	if err != nil {
+		log.Printf("Watchdog leader election error: %v", err)
+		return false
+	}
+
+	return leader
+}
+
+func buildLeaderID() string {
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		host = "unknown-host"
+	}
+	return fmt.Sprintf("%s:%d:%d", host, os.Getpid(), time.Now().UnixNano())
 }

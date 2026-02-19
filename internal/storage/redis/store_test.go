@@ -45,14 +45,15 @@ func testStore(t *testing.T) *Store {
 	store.runningKey = prefix + ":running"
 	store.dlqKey = prefix + ":dlq"
 	store.idempotencyPrefix = prefix + ":idempotency:"
+	store.watchdogLeaderKey = prefix + ":watchdog:leader"
 
 	ctx := context.Background()
-	if err := store.client.Del(ctx, store.pendingKey, store.runningKey, store.dlqKey).Err(); err != nil {
+	if err := store.client.Del(ctx, store.pendingKey, store.runningKey, store.dlqKey, store.watchdogLeaderKey).Err(); err != nil {
 		t.Fatalf("cleanup before test: %v", err)
 	}
 
 	t.Cleanup(func() {
-		_ = store.client.Del(context.Background(), store.pendingKey, store.runningKey, store.dlqKey).Err()
+		_ = store.client.Del(context.Background(), store.pendingKey, store.runningKey, store.dlqKey, store.watchdogLeaderKey).Err()
 		_ = store.client.Close()
 	})
 
@@ -342,5 +343,54 @@ func TestStoreIntegration_CheckAndMoveExpired(t *testing.T) {
 	}
 	if recovered.Id != "task-expired" {
 		t.Fatalf("recovered id = %q, want task-expired", recovered.Id)
+	}
+}
+
+func TestStoreIntegration_WatchdogLeaderElection(t *testing.T) {
+	storeA := testStore(t)
+	storeB := NewStore(ensureRedisContainer(t))
+	storeB.watchdogLeaderKey = storeA.watchdogLeaderKey
+	t.Cleanup(func() {
+		_ = storeB.client.Del(context.Background(), storeB.watchdogLeaderKey).Err()
+		_ = storeB.client.Close()
+	})
+
+	ctx := context.Background()
+	ttl := 400 * time.Millisecond
+
+	isLeader, err := storeA.TryAcquireWatchdogLeader(ctx, "node-a", ttl)
+	if err != nil {
+		t.Fatalf("node-a acquire leader error: %v", err)
+	}
+	if !isLeader {
+		t.Fatalf("node-a should acquire leader lock")
+	}
+
+	isLeader, err = storeB.TryAcquireWatchdogLeader(ctx, "node-b", ttl)
+	if err != nil {
+		t.Fatalf("node-b acquire leader error: %v", err)
+	}
+	if isLeader {
+		t.Fatalf("node-b should not acquire while node-a owns lock")
+	}
+
+	// Current owner can renew lease.
+	time.Sleep(100 * time.Millisecond)
+	isLeader, err = storeA.TryAcquireWatchdogLeader(ctx, "node-a", ttl)
+	if err != nil {
+		t.Fatalf("node-a renew leader error: %v", err)
+	}
+	if !isLeader {
+		t.Fatalf("node-a should renew leader lock")
+	}
+
+	// Simulate owner crash by not renewing further; lock should auto-expire by TTL.
+	time.Sleep(ttl + 100*time.Millisecond)
+	isLeader, err = storeB.TryAcquireWatchdogLeader(ctx, "node-b", ttl)
+	if err != nil {
+		t.Fatalf("node-b acquire after ttl error: %v", err)
+	}
+	if !isLeader {
+		t.Fatalf("node-b should acquire after TTL expiration")
 	}
 }
