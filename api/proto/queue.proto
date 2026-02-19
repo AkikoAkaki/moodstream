@@ -14,6 +14,12 @@ service DelayQueueService {
 
   // Delete 取消/删除一个任务。
   rpc Delete(DeleteRequest) returns (DeleteResponse);
+  
+  // Ack 确认任务执行成功。
+  rpc Ack(AckRequest) returns (AckResponse);
+  
+  // Nack 通知任务执行失败，需要重试。
+  rpc Nack(NackRequest) returns (NackResponse);
 }
 
 // EnqueueRequest 任务提交请求参数。
@@ -23,6 +29,7 @@ message EnqueueRequest {
   int64  delay_seconds = 3; // 延迟时间 (秒)
   string id = 4;            // 客户端指定的唯一ID，若为空则由服务端生成
   int32  max_retries = 5;   // 允许客户端指定最大重试次数，如果不传则使用系统默认
+  string idempotency_key = 6; // 幂等性键，相同 key 的请求只会创建一次任务
 }
 
 message EnqueueResponse {
@@ -45,6 +52,28 @@ message DeleteRequest {
 }
 
 message DeleteResponse {
+  bool success = 1;
+}
+
+message AckRequest {
+  string id = 1; // 任务ID
+}
+
+message AckResponse {
+  bool success = 1;
+}
+
+message NackRequest {
+  string id = 1;           // 任务ID
+  string topic = 2;        // 任务主题（用于重新入队）
+  string payload = 3;      // 任务载荷
+  int64  execute_time = 4; // 执行时间
+  int32  retry_count = 5;  // 重试次数
+  int32  max_retries = 6;  // 最大重试次数
+  int64  created_at = 7;   // 创建时间
+}
+
+message NackResponse {
   bool success = 1;
 }
 

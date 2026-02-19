@@ -8,7 +8,6 @@ package pb
 
 import (
 	context "context"
-
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -23,6 +22,8 @@ const (
 	DelayQueueService_Enqueue_FullMethodName  = "/api.queue.DelayQueueService/Enqueue"
 	DelayQueueService_Retrieve_FullMethodName = "/api.queue.DelayQueueService/Retrieve"
 	DelayQueueService_Delete_FullMethodName   = "/api.queue.DelayQueueService/Delete"
+	DelayQueueService_Ack_FullMethodName      = "/api.queue.DelayQueueService/Ack"
+	DelayQueueService_Nack_FullMethodName     = "/api.queue.DelayQueueService/Nack"
 )
 
 // DelayQueueServiceClient is the client API for DelayQueueService service.
@@ -37,6 +38,10 @@ type DelayQueueServiceClient interface {
 	Retrieve(ctx context.Context, in *RetrieveRequest, opts ...grpc.CallOption) (*RetrieveResponse, error)
 	// Delete 取消/删除一个任务。
 	Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error)
+	// Ack 确认任务执行成功。
+	Ack(ctx context.Context, in *AckRequest, opts ...grpc.CallOption) (*AckResponse, error)
+	// Nack 通知任务执行失败，需要重试。
+	Nack(ctx context.Context, in *NackRequest, opts ...grpc.CallOption) (*NackResponse, error)
 }
 
 type delayQueueServiceClient struct {
@@ -77,6 +82,26 @@ func (c *delayQueueServiceClient) Delete(ctx context.Context, in *DeleteRequest,
 	return out, nil
 }
 
+func (c *delayQueueServiceClient) Ack(ctx context.Context, in *AckRequest, opts ...grpc.CallOption) (*AckResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AckResponse)
+	err := c.cc.Invoke(ctx, DelayQueueService_Ack_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *delayQueueServiceClient) Nack(ctx context.Context, in *NackRequest, opts ...grpc.CallOption) (*NackResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NackResponse)
+	err := c.cc.Invoke(ctx, DelayQueueService_Nack_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DelayQueueServiceServer is the server API for DelayQueueService service.
 // All implementations must embed UnimplementedDelayQueueServiceServer
 // for forward compatibility.
@@ -89,6 +114,10 @@ type DelayQueueServiceServer interface {
 	Retrieve(context.Context, *RetrieveRequest) (*RetrieveResponse, error)
 	// Delete 取消/删除一个任务。
 	Delete(context.Context, *DeleteRequest) (*DeleteResponse, error)
+	// Ack 确认任务执行成功。
+	Ack(context.Context, *AckRequest) (*AckResponse, error)
+	// Nack 通知任务执行失败，需要重试。
+	Nack(context.Context, *NackRequest) (*NackResponse, error)
 	mustEmbedUnimplementedDelayQueueServiceServer()
 }
 
@@ -107,6 +136,12 @@ func (UnimplementedDelayQueueServiceServer) Retrieve(context.Context, *RetrieveR
 }
 func (UnimplementedDelayQueueServiceServer) Delete(context.Context, *DeleteRequest) (*DeleteResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Delete not implemented")
+}
+func (UnimplementedDelayQueueServiceServer) Ack(context.Context, *AckRequest) (*AckResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Ack not implemented")
+}
+func (UnimplementedDelayQueueServiceServer) Nack(context.Context, *NackRequest) (*NackResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Nack not implemented")
 }
 func (UnimplementedDelayQueueServiceServer) mustEmbedUnimplementedDelayQueueServiceServer() {}
 func (UnimplementedDelayQueueServiceServer) testEmbeddedByValue()                           {}
@@ -183,6 +218,42 @@ func _DelayQueueService_Delete_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DelayQueueService_Ack_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AckRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DelayQueueServiceServer).Ack(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DelayQueueService_Ack_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DelayQueueServiceServer).Ack(ctx, req.(*AckRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DelayQueueService_Nack_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DelayQueueServiceServer).Nack(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DelayQueueService_Nack_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DelayQueueServiceServer).Nack(ctx, req.(*NackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DelayQueueService_ServiceDesc is the grpc.ServiceDesc for DelayQueueService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -201,6 +272,14 @@ var DelayQueueService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Delete",
 			Handler:    _DelayQueueService_Delete_Handler,
+		},
+		{
+			MethodName: "Ack",
+			Handler:    _DelayQueueService_Ack_Handler,
+		},
+		{
+			MethodName: "Nack",
+			Handler:    _DelayQueueService_Nack_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

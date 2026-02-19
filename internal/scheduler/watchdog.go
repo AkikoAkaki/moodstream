@@ -1,59 +1,77 @@
-// Package scheduler 负责队列的后台调度任务。
-// 核心逻辑：包含 Watchdog（看门狗）机制，用于监控和恢复可见性超时或执行失败的任务。
 package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AkikoAkaki/async-task-platform/internal/conf"
+	"github.com/AkikoAkaki/async-task-platform/internal/observability"
 	"github.com/AkikoAkaki/async-task-platform/internal/storage"
 )
 
-// Watchdog 看门狗组件，负责定期扫描并恢复异常任务（如 Worker 宕机导致的未 Ack 任务）。
-// @ThreadSafe: 内部状态受协程生命周期管理，支持跨协程安全启动/停止。
+// Watchdog periodically checks and recovers expired running tasks.
 type Watchdog struct {
-	store    storage.JobStore // 任务持久化存储接口
-	interval time.Duration    // 扫描频率
-	timeout  int64            // 可见性超时阈值（秒）
-	maxRetry int32            // 任务最大重试次数
+	store     storage.JobStore
+	interval  time.Duration
+	timeout   int64
+	maxRetry  int32
+	leaderID  string
+	leaderTTL time.Duration
 
-	quit chan struct{}  // 退出信号通道
-	wg   sync.WaitGroup // 等待协程关闭
+	quit chan struct{}
+	wg   sync.WaitGroup
+
+	stopOnce sync.Once
+	stopped  atomic.Bool
 }
 
-// NewWatchdog 根据配置初始化 Watchdog 实例。
-// @Param cfg: 队列全局配置，包含扫描间隔、超时时间等。
-// @Param store: 实现 JobStore 接口的任务存储器。
 func NewWatchdog(cfg conf.QueueConfig, store storage.JobStore) *Watchdog {
-	// 防止整数溢出：确保 MaxRetries 在 int32 范围内
 	maxRetries := cfg.MaxRetries
-	if maxRetries > 2147483647 { // int32 最大值
+	if maxRetries > 2147483647 {
 		maxRetries = 2147483647
 	}
 
-	// 防止整数溢出：确保 VisibilityTimeout 在合理范围内
 	visibilityTimeout := cfg.VisibilityTimeout
 	if visibilityTimeout < 0 {
-		visibilityTimeout = 60 // 默认 60 秒
+		visibilityTimeout = 60
+	}
+
+	interval := time.Duration(cfg.WatchdogInterval) * time.Second
+	if interval <= 0 {
+		interval = time.Second
+	}
+
+	leaderTTL := interval + 5*time.Second
+	if leaderTTL < 10*time.Second {
+		leaderTTL = 10 * time.Second
 	}
 
 	return &Watchdog{
-		store:    store,
-		interval: time.Duration(cfg.WatchdogInterval) * time.Second,
-		timeout:  int64(visibilityTimeout),
-		maxRetry: int32(maxRetries),
-		quit:     make(chan struct{}),
+		store:     store,
+		interval:  interval,
+		timeout:   int64(visibilityTimeout),
+		maxRetry:  int32(maxRetries),
+		leaderID:  buildLeaderID(),
+		leaderTTL: leaderTTL,
+		quit:      make(chan struct{}),
 	}
 }
 
-// Start 异步启动看门狗循环。
 func (w *Watchdog) Start() {
+	if w.stopped.Load() {
+		// Do not restart after Stop() has been finalized.
+		return
+	}
+
 	w.wg.Add(1)
 	go func() {
 		defer w.wg.Done()
+
 		ticker := time.NewTicker(w.interval)
 		defer ticker.Stop()
 
@@ -64,29 +82,72 @@ func (w *Watchdog) Start() {
 			case <-w.quit:
 				return
 			case <-ticker.C:
-				// 定期触发异常任务恢复
 				w.recover()
 			}
 		}
 	}()
 }
 
-// Stop 停止看门狗循环并等待协程安全退出。
+// Stop is idempotent and safe to call multiple times.
 func (w *Watchdog) Stop() {
-	close(w.quit)
-	w.wg.Wait()
-	log.Println("Watchdog stopped")
+	w.stopOnce.Do(func() {
+		w.stopped.Store(true)
+		close(w.quit)
+		w.wg.Wait()
+		log.Println("Watchdog stopped")
+	})
 }
 
-// recover 执行任务恢复逻辑。
-// @Algorithm: 调用存储层的 CheckAndMoveExpired，利用 Lua 脚本保证“检测超时+重入队”的原子性。
-// @Note: 恢复过程带有重试次数限制，超过限制的任务将进入死信队列（DLQ）。
 func (w *Watchdog) recover() {
-	// 设置单次恢复任务的 Context 超时，防止因存储层压力过大导致协程堆积。
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	w.updateQueueDepth(ctx)
+
+	if !w.tryAcquireLeadership(ctx) {
+		return
+	}
 
 	if err := w.store.CheckAndMoveExpired(ctx, w.timeout, w.maxRetry); err != nil {
 		log.Printf("Watchdog recover error: %v", err)
 	}
+}
+
+func (w *Watchdog) updateQueueDepth(ctx context.Context) {
+	provider, ok := w.store.(storage.QueueDepthProvider)
+	if !ok {
+		return
+	}
+
+	depth, err := provider.QueueDepth(ctx, "default")
+	if err != nil {
+		log.Printf("Watchdog queue depth read error: %v", err)
+		return
+	}
+
+	observability.SetQueueDepth("default", float64(depth))
+}
+
+func (w *Watchdog) tryAcquireLeadership(ctx context.Context) bool {
+	elector, ok := w.store.(storage.WatchdogLeaderElector)
+	if !ok {
+		// Backward-compatible path for stores without election support.
+		return true
+	}
+
+	leader, err := elector.TryAcquireWatchdogLeader(ctx, w.leaderID, w.leaderTTL)
+	if err != nil {
+		log.Printf("Watchdog leader election error: %v", err)
+		return false
+	}
+
+	return leader
+}
+
+func buildLeaderID() string {
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		host = "unknown-host"
+	}
+	return fmt.Sprintf("%s:%d:%d", host, os.Getpid(), time.Now().UnixNano())
 }

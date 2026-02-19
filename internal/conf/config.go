@@ -1,7 +1,11 @@
 package conf
 
 import (
+	"errors"
+	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -31,44 +35,128 @@ type RedisConfig struct {
 }
 
 type QueueConfig struct {
-	// 任务在 Running 状态的超时时间 (秒)，超过此时间未 ACK 则被 Watchdog 恢复
+	// VisibilityTimeout is the running-state timeout in seconds before watchdog recovery.
 	VisibilityTimeout int `mapstructure:"visibility_timeout"`
-	// Watchdog 扫描间隔 (秒)
+	// WatchdogInterval is the watchdog scan interval in seconds.
 	WatchdogInterval int `mapstructure:"watchdog_interval"`
-	// 默认最大重试次数
+	// MaxRetries is the default retry budget for tasks.
 	MaxRetries int `mapstructure:"max_retries"`
 }
 
-// Load 加载配置。
-// 优先级：环境变量 > 配置文件 > 默认值
+type LoadOptions struct {
+	ConfigFile string
+	ConfigDir  string
+	ConfigName string
+	ConfigType string
+	EnvPrefix  string
+}
+
+// Load keeps backward-compatibility for callers that pass a config directory.
 func Load(path string) (*Config, error) {
+	opts := DefaultLoadOptions()
+	opts.ConfigDir = path
+	return LoadWithOptions(opts)
+}
+
+func DefaultLoadOptions() LoadOptions {
+	return LoadOptions{
+		ConfigName: "config",
+		ConfigType: "yaml",
+		EnvPrefix:  "DDQ",
+	}
+}
+
+// LoadWithOptions loads config with precedence:
+// flags/options > environment variables > config file > defaults.
+func LoadWithOptions(opts LoadOptions) (*Config, error) {
+	opts = resolveOptions(opts)
+
 	v := viper.New()
+	applyDefaults(v)
+	configureEnv(v, opts.EnvPrefix)
+	configureConfigSource(v, opts)
 
-	// 1. 设置配置文件路径
-	v.AddConfigPath(path)     // 比如 "./config"
-	v.SetConfigName("config") // 文件名 config (不带后缀)
-	v.SetConfigType("yaml")
-
-	// 2. 开启环境变量自动匹配
-	// 比如 config.yaml 里 redis.addr 对应环境变量 DDQ_REDIS_ADDR
-	v.SetEnvPrefix("DDQ")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
-
-	// 3. 读取配置
 	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			log.Println("Config file not found, using environment variables only")
-		} else {
-			return nil, err
+		var notFound viper.ConfigFileNotFoundError
+		if !errors.As(err, &notFound) {
+			return nil, fmt.Errorf("read config: %w", err)
 		}
+		log.Printf("Config file not found, using defaults and env vars")
 	}
 
-	// 4. 绑定到结构体
 	var c Config
 	if err := v.Unmarshal(&c); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
 	return &c, nil
+}
+
+func resolveOptions(opts LoadOptions) LoadOptions {
+	resolved := DefaultLoadOptions()
+
+	if opts.ConfigName != "" {
+		resolved.ConfigName = opts.ConfigName
+	}
+	if opts.ConfigType != "" {
+		resolved.ConfigType = opts.ConfigType
+	}
+	if opts.EnvPrefix != "" {
+		resolved.EnvPrefix = opts.EnvPrefix
+	}
+
+	if opts.ConfigFile != "" {
+		resolved.ConfigFile = opts.ConfigFile
+	} else if envFile := strings.TrimSpace(os.Getenv("DDQ_CONFIG_FILE")); envFile != "" {
+		resolved.ConfigFile = envFile
+	}
+
+	if opts.ConfigDir != "" {
+		resolved.ConfigDir = opts.ConfigDir
+	} else if envDir := strings.TrimSpace(os.Getenv("DDQ_CONFIG_DIR")); envDir != "" {
+		resolved.ConfigDir = envDir
+	}
+
+	return resolved
+}
+
+func configureEnv(v *viper.Viper, prefix string) {
+	v.SetEnvPrefix(prefix)
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+}
+
+func configureConfigSource(v *viper.Viper, opts LoadOptions) {
+	if opts.ConfigFile != "" {
+		v.SetConfigFile(filepath.Clean(opts.ConfigFile))
+		return
+	}
+
+	v.SetConfigName(opts.ConfigName)
+	v.SetConfigType(opts.ConfigType)
+
+	if opts.ConfigDir != "" {
+		v.AddConfigPath(filepath.Clean(opts.ConfigDir))
+		return
+	}
+
+	// Default search order when no explicit path is provided.
+	v.AddConfigPath(".")
+	v.AddConfigPath("config")
+}
+
+func applyDefaults(v *viper.Viper) {
+	v.SetDefault("app.name", "async-task-platform")
+	v.SetDefault("app.env", "local")
+
+	v.SetDefault("server.port", 8080)
+	v.SetDefault("server.grpc_port", 9090)
+
+	v.SetDefault("redis.addr", "localhost:6379")
+	v.SetDefault("redis.password", "")
+	v.SetDefault("redis.db", 0)
+
+	v.SetDefault("queue.visibility_timeout", 60)
+	v.SetDefault("queue.watchdog_interval", 30)
+	v.SetDefault("queue.max_retries", 3)
 }
