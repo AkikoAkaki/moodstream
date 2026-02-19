@@ -26,30 +26,30 @@ This project targets production-grade scheduling fundamentals:
 
 ```mermaid
 flowchart TD
-    P[Producer / API Client] -->|Enqueue/Delete via gRPC| S[Server]
+    P["Producer / API Client"] -->|"Enqueue/Delete via gRPC"| S[Server]
     S --> Q[Queue Service]
     Q --> R[(Redis)]
 
-    subgraph WorkerNode[Worker Process]
+    subgraph WorkerNode["Worker Process"]
         F[Fetcher x1]
         B[Bounded Task Channel]
         PR[Processor Pool xN]
-        F -->|Retrieve(batch)| B
+        F -->|"Retrieve(batch)"| B
         B --> PR
-        PR -->|Ack/Nack| S
+        PR -->|"Ack/Nack"| S
     end
 
-    subgraph SchedulerCluster[Server Cluster]
+    subgraph SchedulerCluster["Server Cluster"]
         W1[Watchdog Instance A]
         W2[Watchdog Instance B]
         W3[Watchdog Instance C]
     end
 
-    W1 -->|TryAcquireWatchdogLeader| R
-    W2 -->|TryAcquireWatchdogLeader| R
-    W3 -->|TryAcquireWatchdogLeader| R
-    R -->|SETNX + TTL lease| LEADER[Single Active Watchdog]
-    LEADER -->|CheckAndMoveExpired| R
+    W1 -->|"TryAcquireWatchdogLeader"| R
+    W2 -->|"TryAcquireWatchdogLeader"| R
+    W3 -->|"TryAcquireWatchdogLeader"| R
+    R -->|"SETNX + TTL lease"| LEADER["Single Active Watchdog"]
+    LEADER -->|"CheckAndMoveExpired"| R
 ```
 
 ### Key Redis Structures
