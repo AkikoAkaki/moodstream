@@ -17,6 +17,7 @@ type Store struct {
 	runningKey        string
 	dlqKey            string
 	idempotencyPrefix string
+	taskIDPrefix      string
 	watchdogLeaderKey string
 }
 
@@ -37,6 +38,7 @@ func NewStore(addr string) *Store {
 		runningKey:        "ddq:running",
 		dlqKey:            "ddq:dlq",
 		idempotencyPrefix: "ddq:idempotency:",
+		taskIDPrefix:      "ddq:taskid:",
 		watchdogLeaderKey: "ddq:watchdog:leader",
 	}
 }
@@ -55,7 +57,7 @@ func (s *Store) AddWithIdempotency(ctx context.Context, task *pb.Task, idempoten
 	result, err := s.client.Eval(
 		ctx,
 		luaEnqueueWithIdempotency,
-		[]string{s.pendingKey, s.idempotencyPrefix},
+		[]string{s.pendingKey, s.idempotencyPrefix, s.taskIDPrefix},
 		string(bytes), task.ExecuteTime, task.Id, idempotencyKey, idempotencyTTL,
 	).Result()
 	if err != nil {
@@ -113,7 +115,13 @@ func (s *Store) FetchAndHold(ctx context.Context, topic string, limit int64) ([]
 }
 
 func (s *Store) Remove(ctx context.Context, id string) error {
-	result, err := s.client.Eval(ctx, luaDelete, []string{s.pendingKey, s.runningKey}, id).Result()
+	result, err := s.client.Eval(
+		ctx,
+		luaDelete,
+		[]string{s.pendingKey, s.runningKey},
+		id,
+		s.taskIDPrefix,
+	).Result()
 	if err != nil {
 		return fmt.Errorf("delete task failed: %w", err)
 	}
@@ -127,7 +135,7 @@ func (s *Store) Remove(ctx context.Context, id string) error {
 }
 
 func (s *Store) Ack(ctx context.Context, id string) error {
-	return s.client.Eval(ctx, luaAck, []string{s.runningKey}, id).Err()
+	return s.client.Eval(ctx, luaAck, []string{s.runningKey}, id, s.taskIDPrefix).Err()
 }
 
 func (s *Store) Nack(ctx context.Context, task *pb.Task) error {
@@ -148,7 +156,7 @@ func (s *Store) Nack(ctx context.Context, task *pb.Task) error {
 		ctx,
 		luaNack,
 		[]string{s.runningKey, s.pendingKey, s.dlqKey},
-		task.Id, bytes, retryTime, isDead,
+		task.Id, bytes, retryTime, isDead, s.taskIDPrefix,
 	).Err(); err != nil {
 		return fmt.Errorf("nack failed: %w", err)
 	}
@@ -161,7 +169,7 @@ func (s *Store) CheckAndMoveExpired(ctx context.Context, visibilityTimeout int64
 	if err := s.client.Eval(
 		ctx,
 		luaRecover,
-		[]string{s.runningKey, s.pendingKey, s.dlqKey},
+		[]string{s.runningKey, s.pendingKey, s.dlqKey, s.taskIDPrefix},
 		now, visibilityTimeout, maxRetries,
 	).Err(); err != nil {
 		return fmt.Errorf("recover failed: %w", err)

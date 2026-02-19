@@ -210,6 +210,91 @@ func TestServiceIntegration_IdempotencyKey(t *testing.T) {
 	}
 }
 
+func TestServiceIntegration_CustomIDIdempotency(t *testing.T) {
+	svc, store := newIntegrationService(t)
+	ctx := context.Background()
+
+	first, err := svc.Enqueue(ctx, &pb.EnqueueRequest{
+		Id:           "order-custom-id-1",
+		Topic:        "order",
+		Payload:      `{"order_id":101}`,
+		DelaySeconds: 10,
+	})
+	if err != nil {
+		t.Fatalf("Enqueue(first custom id): %v", err)
+	}
+	if !first.Success || first.Id != "order-custom-id-1" {
+		t.Fatalf("unexpected first response: %+v", first)
+	}
+
+	second, err := svc.Enqueue(ctx, &pb.EnqueueRequest{
+		Id:           "order-custom-id-1",
+		Topic:        "order",
+		Payload:      `{"order_id":202}`,
+		DelaySeconds: 20,
+	})
+	if err != nil {
+		t.Fatalf("Enqueue(second duplicate custom id): %v", err)
+	}
+	if !second.Success || second.Id != first.Id {
+		t.Fatalf("unexpected second response: %+v", second)
+	}
+
+	count, err := store.GetClient().ZCard(ctx, "ddq:tasks").Result()
+	if err != nil {
+		t.Fatalf("ZCard(ddq:tasks): %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("pending count = %d, want 1 for duplicate custom id", count)
+	}
+}
+
+func TestServiceIntegration_DeleteFromRunning(t *testing.T) {
+	svc, store := newIntegrationService(t)
+	ctx := context.Background()
+
+	enqueueResp, err := svc.Enqueue(ctx, &pb.EnqueueRequest{
+		Id:           "delete-running-1",
+		Topic:        "cancel",
+		Payload:      `{"task":"running-delete"}`,
+		DelaySeconds: 0,
+	})
+	if err != nil {
+		t.Fatalf("Enqueue(): %v", err)
+	}
+
+	retrieveResp, err := svc.Retrieve(ctx, &pb.RetrieveRequest{
+		Topic:     "cancel",
+		BatchSize: 1,
+	})
+	if err != nil {
+		t.Fatalf("Retrieve(): %v", err)
+	}
+	if len(retrieveResp.Tasks) != 1 {
+		t.Fatalf("len(tasks) = %d, want 1", len(retrieveResp.Tasks))
+	}
+
+	deleteResp, err := svc.Delete(ctx, &pb.DeleteRequest{Id: enqueueResp.Id})
+	if err != nil {
+		t.Fatalf("Delete(running): %v", err)
+	}
+	if !deleteResp.Success {
+		t.Fatalf("Delete(running) success = false")
+	}
+
+	pendingCount, err := store.GetClient().ZCard(ctx, "ddq:tasks").Result()
+	if err != nil {
+		t.Fatalf("ZCard(ddq:tasks): %v", err)
+	}
+	runningCount, err := store.GetClient().HLen(ctx, "ddq:running").Result()
+	if err != nil {
+		t.Fatalf("HLen(ddq:running): %v", err)
+	}
+	if pendingCount != 0 || runningCount != 0 {
+		t.Fatalf("expected pending=0 and running=0, got pending=%d running=%d", pendingCount, runningCount)
+	}
+}
+
 func TestServiceIntegration_NackRetryAndDLQ(t *testing.T) {
 	svc, store := newIntegrationService(t)
 	ctx := context.Background()

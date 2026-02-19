@@ -45,6 +45,7 @@ func testStore(t *testing.T) *Store {
 	store.runningKey = prefix + ":running"
 	store.dlqKey = prefix + ":dlq"
 	store.idempotencyPrefix = prefix + ":idempotency:"
+	store.taskIDPrefix = prefix + ":taskid:"
 	store.watchdogLeaderKey = prefix + ":watchdog:leader"
 
 	ctx := context.Background()
@@ -194,6 +195,29 @@ func TestStoreIntegration_AddWithIdempotency(t *testing.T) {
 	}
 }
 
+func TestStoreIntegration_AddWithCustomIDDedup(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+
+	first := newTask("custom-task-id", "order", `{"v":1}`, time.Now().Add(time.Second), 3)
+	second := newTask("custom-task-id", "order", `{"v":2}`, time.Now().Add(2*time.Second), 3)
+
+	if err := store.Add(ctx, first); err != nil {
+		t.Fatalf("Add(first): %v", err)
+	}
+	if err := store.Add(ctx, second); err != nil {
+		t.Fatalf("Add(second duplicate id): %v", err)
+	}
+
+	count, err := store.client.ZCard(ctx, store.pendingKey).Result()
+	if err != nil {
+		t.Fatalf("ZCard(pending): %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("pending count = %d, want 1 for duplicate custom id", count)
+	}
+}
+
 func TestStoreIntegration_Remove(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
@@ -209,6 +233,44 @@ func TestStoreIntegration_Remove(t *testing.T) {
 
 	if err := store.Remove(ctx, task.Id); err == nil {
 		t.Fatalf("Remove(missing) expected error")
+	}
+}
+
+func TestStoreIntegration_RemoveFromRunning(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+
+	task := newTask("task-running-delete", "cleanup", `{}`, time.Now().Add(-time.Second), 3)
+	if err := store.Add(ctx, task); err != nil {
+		t.Fatalf("Add(): %v", err)
+	}
+
+	tasks, err := store.FetchAndHold(ctx, "cleanup", 1)
+	if err != nil {
+		t.Fatalf("FetchAndHold(): %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("len(tasks) = %d, want 1", len(tasks))
+	}
+
+	if err := store.Remove(ctx, task.Id); err != nil {
+		t.Fatalf("Remove(running): %v", err)
+	}
+
+	runningCount, err := store.client.HLen(ctx, store.runningKey).Result()
+	if err != nil {
+		t.Fatalf("HLen(running): %v", err)
+	}
+	if runningCount != 0 {
+		t.Fatalf("running count = %d, want 0", runningCount)
+	}
+
+	pendingCount, err := store.client.ZCard(ctx, store.pendingKey).Result()
+	if err != nil {
+		t.Fatalf("ZCard(pending): %v", err)
+	}
+	if pendingCount != 0 {
+		t.Fatalf("pending count = %d, want 0", pendingCount)
 	}
 }
 
