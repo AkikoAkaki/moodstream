@@ -27,6 +27,7 @@ func (s *Store) GetClient() *redis.Client {
 
 var _ storage.JobStore = (*Store)(nil)
 var _ storage.WatchdogLeaderElector = (*Store)(nil)
+var _ storage.QueueDepthProvider = (*Store)(nil)
 
 func NewStore(addr string) *Store {
 	rdb := redis.NewClient(&redis.Options{
@@ -176,6 +177,14 @@ func (s *Store) CheckAndMoveExpired(ctx context.Context, visibilityTimeout int64
 	}
 
 	return nil
+}
+
+func (s *Store) QueueDepth(ctx context.Context, topic string) (int64, error) {
+	depth, err := s.client.ZCard(ctx, s.pendingKey).Result()
+	if err != nil {
+		return 0, fmt.Errorf("queue depth failed: %w", err)
+	}
+	return depth, nil
 }
 
 const luaRefreshWatchdogLeaderLease = `

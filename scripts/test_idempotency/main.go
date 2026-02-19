@@ -22,7 +22,8 @@ func main() {
 	client := pb.NewDelayQueueServiceClient(conn)
 	ctx := context.Background()
 
-	fmt.Println("=== Testing Idempotent Enqueue ===\n")
+	fmt.Println("=== Testing Idempotent Enqueue ===")
+	fmt.Println()
 
 	// 2. 第一次提交任务（使用幂等性 key）
 	fmt.Println("1. First enqueue with idempotency_key...")

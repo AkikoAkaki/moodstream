@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AkikoAkaki/async-task-platform/internal/conf"
+	"github.com/AkikoAkaki/async-task-platform/internal/observability"
 	"github.com/AkikoAkaki/async-task-platform/internal/storage"
 )
 
@@ -101,6 +102,8 @@ func (w *Watchdog) recover() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	w.updateQueueDepth(ctx)
+
 	if !w.tryAcquireLeadership(ctx) {
 		return
 	}
@@ -108,6 +111,21 @@ func (w *Watchdog) recover() {
 	if err := w.store.CheckAndMoveExpired(ctx, w.timeout, w.maxRetry); err != nil {
 		log.Printf("Watchdog recover error: %v", err)
 	}
+}
+
+func (w *Watchdog) updateQueueDepth(ctx context.Context) {
+	provider, ok := w.store.(storage.QueueDepthProvider)
+	if !ok {
+		return
+	}
+
+	depth, err := provider.QueueDepth(ctx, "default")
+	if err != nil {
+		log.Printf("Watchdog queue depth read error: %v", err)
+		return
+	}
+
+	observability.SetQueueDepth("default", float64(depth))
 }
 
 func (w *Watchdog) tryAcquireLeadership(ctx context.Context) bool {

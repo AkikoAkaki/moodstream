@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -14,6 +15,8 @@ import (
 
 	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
 	"github.com/AkikoAkaki/async-task-platform/internal/conf"
+	"github.com/AkikoAkaki/async-task-platform/internal/observability"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -41,6 +44,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
+	metricsSrv := startMetricsServer(":8082")
 
 	grpcAddr := opts.serverAddr
 	if grpcAddr == "" {
@@ -100,6 +104,12 @@ func main() {
 	close(taskCh)
 	// 3) Exit only after all Ack/Nack paths are finished.
 	procWG.Wait()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := metricsSrv.Shutdown(ctx); err != nil {
+		log.Printf("metrics server shutdown error: %v", err)
+	}
 
 	log.Println("Worker stopped gracefully")
 }
@@ -181,6 +191,12 @@ func runFetcher(client pb.DelayQueueServiceClient, opts workerOptions, taskCh ch
 
 func runProcessor(workerID int, client pb.DelayQueueServiceClient, opts workerOptions, taskCh <-chan *pb.Task) {
 	for task := range taskCh {
+		start := time.Now()
+		topic := task.Topic
+		if topic == "" {
+			topic = opts.topic
+		}
+
 		log.Printf("[PROCESSOR-%d] execute task=%s topic=%s", workerID, task.Id, task.Topic)
 
 		err := executeTask(task)
@@ -190,17 +206,41 @@ func runProcessor(workerID int, client pb.DelayQueueServiceClient, opts workerOp
 			} else {
 				log.Printf("[PROCESSOR-%d] nack task=%s", workerID, task.Id)
 			}
+			observability.ObserveTaskProcessDuration(topic, time.Since(start))
 			continue
 		}
 
 		if ackErr := ackWithRetry(client, task.Id, opts.rpcTimeout, opts.ackRetry); ackErr != nil {
 			log.Printf("[PROCESSOR-%d] ack failed task=%s err=%v", workerID, task.Id, ackErr)
+			observability.ObserveTaskProcessDuration(topic, time.Since(start))
 			continue
 		}
 		log.Printf("[PROCESSOR-%d] ack task=%s", workerID, task.Id)
+		observability.ObserveTaskProcessDuration(topic, time.Since(start))
 	}
 
 	log.Printf("[PROCESSOR-%d] stopped", workerID)
+}
+
+func startMetricsServer(addr string) *http.Server {
+	observability.Register()
+
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	go func() {
+		log.Printf("metrics server listening at %s/metrics", addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("metrics server error: %v", err)
+		}
+	}()
+
+	return srv
 }
 
 func executeTask(task *pb.Task) error {

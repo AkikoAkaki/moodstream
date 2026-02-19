@@ -7,6 +7,7 @@ import (
 
 	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
 	"github.com/AkikoAkaki/async-task-platform/internal/common/errno"
+	"github.com/AkikoAkaki/async-task-platform/internal/observability"
 	"github.com/AkikoAkaki/async-task-platform/internal/storage"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -28,9 +29,11 @@ func NewService(store storage.JobStore) *Service {
 
 func (s *Service) Enqueue(ctx context.Context, req *pb.EnqueueRequest) (*pb.EnqueueResponse, error) {
 	if req.Topic == "" || req.Payload == "" {
+		observability.IncTaskEnqueue(req.Topic, "invalid")
 		return nil, status.Error(codes.InvalidArgument, errno.ErrInvalidParam.Message)
 	}
 	if req.DelaySeconds < 0 {
+		observability.IncTaskEnqueue(req.Topic, "invalid")
 		return nil, status.Error(codes.InvalidArgument, "delay_seconds must be >= 0")
 	}
 
@@ -62,11 +65,14 @@ func (s *Service) Enqueue(ctx context.Context, req *pb.EnqueueRequest) (*pb.Enqu
 		err = s.store.Add(ctx, task)
 	}
 	if err != nil {
+		observability.IncTaskEnqueue(task.Topic, "error")
 		return &pb.EnqueueResponse{
 			Success:      false,
 			ErrorMessage: "failed to store task",
 		}, status.Error(codes.Internal, err.Error())
 	}
+
+	observability.IncTaskEnqueue(task.Topic, "success")
 
 	return &pb.EnqueueResponse{
 		Success: true,
