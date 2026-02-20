@@ -133,6 +133,7 @@ Common targets:
 make fmt
 make lint
 make test
+make ci-local
 ```
 
 Run focused integration suites:
@@ -141,6 +142,8 @@ Run focused integration suites:
 go test ./internal/storage/redis -run TestStoreIntegration -count=1
 go test ./internal/queue -run TestServiceIntegration -count=1
 ```
+
+PowerShell local automation profile workflow is documented in `docs/LOCAL_AUTOMATION_PROFILE.md`.
 
 ## License
 

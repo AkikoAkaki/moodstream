@@ -44,13 +44,27 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
-      - name: Execute Static Code Analysis
-        uses: golangci/golangci-lint-action@v4
+      - name: Restore golangci-lint analysis cache
+        uses: actions/cache@v4
         with:
-          version: ${{ env.GOLANGCI_LINT_VERSION }}
-          install-mode: goinstall
-          args: --timeout=5m --issues-exit-code=1
-          only-new-issues: ${{ github.event_name == 'pull_request' }}
+          path: ~/.cache/golangci-lint
+          key: golangci-lint-cache-${{ runner.os }}-${{ hashFiles('go.sum', '.golangci.yml') }}
+          restore-keys: |
+            golangci-lint-cache-${{ runner.os }}-
+
+      - name: Restore golangci-lint binary cache
+        id: golangci-lint-bin-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin/golangci-lint
+          key: golangci-lint-bin-${{ runner.os }}-${{ env.GOLANGCI_LINT_VERSION }}
+
+      - name: Install golangci-lint
+        if: steps.golangci-lint-bin-cache.outputs.cache-hit != 'true'
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@${{ env.GOLANGCI_LINT_VERSION }}
+
+      - name: Execute Static Code Analysis
+        run: $HOME/go/bin/golangci-lint run --timeout=5m --issues-exit-code=1
 
   test-and-build:
     name: Test & Build
