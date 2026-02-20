@@ -149,7 +149,7 @@ for i = 1, #all_running, 2 do
 	local start_time = tonumber(entry.start)
 	local task = entry.task
 
-	if (now - start_time) > timeout then
+	if (now - start_time) >= timeout then
 		task.retry_count = (task.retry_count or 0) + 1
 		local task_json = cjson.encode(task)
 
