@@ -26,7 +26,9 @@ var (
 func TestMain(m *testing.M) {
 	code := m.Run()
 	if storeTCContainer != nil {
-		_ = storeTCContainer.Terminate(context.Background())
+		if err := storeTCContainer.Terminate(context.Background()); err != nil {
+			fmt.Fprintf(os.Stderr, "terminate redis test container: %v\n", err)
+		}
 	}
 	os.Exit(code)
 }
@@ -54,8 +56,12 @@ func testStore(t *testing.T) *Store {
 	}
 
 	t.Cleanup(func() {
-		_ = store.client.Del(context.Background(), store.pendingKey, store.runningKey, store.dlqKey, store.watchdogLeaderKey).Err()
-		_ = store.client.Close()
+		if err := store.client.Del(context.Background(), store.pendingKey, store.runningKey, store.dlqKey, store.watchdogLeaderKey).Err(); err != nil {
+			t.Logf("cleanup redis keys: %v", err)
+		}
+		if err := store.client.Close(); err != nil {
+			t.Logf("close redis client: %v", err)
+		}
 	})
 
 	return store
@@ -84,14 +90,20 @@ func ensureRedisContainer(t *testing.T) string {
 
 		host, err := container.Host(ctx)
 		if err != nil {
-			_ = container.Terminate(ctx)
+			if termErr := container.Terminate(ctx); termErr != nil {
+				storeTCSetupErr = fmt.Errorf("resolve redis host: %w; terminate container: %v", err, termErr)
+				return
+			}
 			storeTCSetupErr = fmt.Errorf("resolve redis host: %w", err)
 			return
 		}
 
 		port, err := container.MappedPort(ctx, "6379/tcp")
 		if err != nil {
-			_ = container.Terminate(ctx)
+			if termErr := container.Terminate(ctx); termErr != nil {
+				storeTCSetupErr = fmt.Errorf("resolve redis port: %w; terminate container: %v", err, termErr)
+				return
+			}
 			storeTCSetupErr = fmt.Errorf("resolve redis port: %w", err)
 			return
 		}
@@ -413,8 +425,12 @@ func TestStoreIntegration_WatchdogLeaderElection(t *testing.T) {
 	storeB := NewStore(ensureRedisContainer(t))
 	storeB.watchdogLeaderKey = storeA.watchdogLeaderKey
 	t.Cleanup(func() {
-		_ = storeB.client.Del(context.Background(), storeB.watchdogLeaderKey).Err()
-		_ = storeB.client.Close()
+		if err := storeB.client.Del(context.Background(), storeB.watchdogLeaderKey).Err(); err != nil {
+			t.Logf("cleanup watchdog key: %v", err)
+		}
+		if err := storeB.client.Close(); err != nil {
+			t.Logf("close redis client B: %v", err)
+		}
 	})
 
 	ctx := context.Background()

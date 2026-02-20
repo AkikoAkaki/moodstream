@@ -17,7 +17,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil {
+			log.Printf("close grpc connection error: %v", closeErr)
+		}
+	}()
 
 	client := pb.NewDelayQueueServiceClient(conn)
 	ctx := context.Background()
@@ -81,7 +85,7 @@ func main() {
 
 	// 7. 测试完整流程：Enqueue -> Retrieve -> Ack
 	fmt.Println("\n5. Testing complete flow: Enqueue -> Retrieve -> Ack...")
-	
+
 	// Enqueue立即执行的任务
 	enqResp2, err := client.Enqueue(ctx, &pb.EnqueueRequest{
 		Topic:        "test-complete",
@@ -93,10 +97,10 @@ func main() {
 	}
 	taskID2 := enqResp2.Id
 	fmt.Printf("   Enqueued task: %s\n", taskID2)
-	
+
 	// 稍等一下确保写入
 	time.Sleep(100 * time.Millisecond)
-	
+
 	// Retrieve
 	retrieveResp2, err := client.Retrieve(ctx, &pb.RetrieveRequest{
 		Topic:     "test-complete",
@@ -106,11 +110,11 @@ func main() {
 		log.Fatalf("Retrieve failed: %v", err)
 	}
 	fmt.Printf("   Retrieved %d tasks\n", len(retrieveResp2.Tasks))
-	
+
 	if len(retrieveResp2.Tasks) > 0 {
 		task := retrieveResp2.Tasks[0]
 		fmt.Printf("   Task payload: %s\n", task.Payload)
-		
+
 		// Ack
 		ackResp, err := client.Ack(ctx, &pb.AckRequest{
 			Id: task.Id,
