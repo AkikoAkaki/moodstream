@@ -21,6 +21,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+var (
+	Version   = "dev"
+	BuildTime = "unknown"
+)
+
 type workerOptions struct {
 	configFile     string
 	configDir      string
@@ -35,7 +40,12 @@ type workerOptions struct {
 }
 
 func main() {
+	showVer := flag.Bool("version", false, "Print version information and exit")
 	opts := parseFlags()
+	if *showVer {
+		fmt.Printf("worker version=%s build_time=%s\n", Version, BuildTime)
+		return
+	}
 
 	cfg, err := conf.LoadWithOptions(conf.LoadOptions{
 		ConfigFile: opts.configFile,
