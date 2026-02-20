@@ -1,46 +1,41 @@
-.PHONY: run-server run-worker up down proto lint test fmt build-server build-worker
+.PHONY: run-server run-worker up down proto fmt lint test build-server build-worker ci-local
 
-# 启动基础设施 (Redis)
 up:
 	docker-compose -f deploy/docker-compose.yaml up -d
 
-# 关闭基础设施
 down:
 	docker-compose -f deploy/docker-compose.yaml down
 
-# 运行 Server (暂时只是个空壳)
 run-server:
 	go run cmd/server/main.go
 
-# 运行 Worker (暂时只是个空壳)
 run-worker:
 	go run cmd/worker/main.go
 
-# 生成 Proto 代码
 proto:
 	@echo "Generating protobuf code..."
 	protoc --go_out=. --go_opt=paths=source_relative \
 	       --go-grpc_out=. --go-grpc_opt=paths=source_relative \
 	       api/proto/queue.proto
 
-# 代码格式化 (重要: 必须在 lint 前执行)
 fmt:
 	@echo "Formatting code..."
 	goimports -w .
 
-# 代码检查 (强制先格式化)
 lint: fmt
 	@echo "Linting code..."
 	golangci-lint run
 
-# 运行测试
 test:
 	go test -v -race ./...
 
-# 构建 Server (用于本地验证)
 build-server:
+	mkdir -p ./bin
 	go build -v -o ./bin/server ./cmd/server
 
-# 构建 Worker (用于本地验证)
 build-worker:
+	mkdir -p ./bin
 	go build -v -o ./bin/worker ./cmd/worker
+
+ci-local: lint test build-server build-worker
+	@echo "Local CI checks passed"

@@ -51,40 +51,40 @@ func TestNew(t *testing.T) {
 
 func TestPredefinedErrors(t *testing.T) {
 	tests := []struct {
-		name    string
-		err     *Error
+		name     string
+		err      *Error
 		wantCode int32
-		wantMsg string
+		wantMsg  string
 	}{
 		{
-			name:    "OK",
-			err:     OK,
+			name:     "OK",
+			err:      OK,
 			wantCode: 0,
-			wantMsg: "success",
+			wantMsg:  "success",
 		},
 		{
-			name:    "ErrInternalServerError",
-			err:     ErrInternalServerError,
+			name:     "ErrInternalServerError",
+			err:      ErrInternalServerError,
 			wantCode: 10001,
-			wantMsg: "internal server error",
+			wantMsg:  "internal server error",
 		},
 		{
-			name:    "ErrInvalidParam",
-			err:     ErrInvalidParam,
+			name:     "ErrInvalidParam",
+			err:      ErrInvalidParam,
 			wantCode: 10002,
-			wantMsg: "invalid parameter",
+			wantMsg:  "invalid parameter",
 		},
 		{
-			name:    "ErrTaskNotFound",
-			err:     ErrTaskNotFound,
+			name:     "ErrTaskNotFound",
+			err:      ErrTaskNotFound,
 			wantCode: 20001,
-			wantMsg: "task not found",
+			wantMsg:  "task not found",
 		},
 		{
-			name:    "ErrTaskAlreadyExist",
-			err:     ErrTaskAlreadyExist,
+			name:     "ErrTaskAlreadyExist",
+			err:      ErrTaskAlreadyExist,
 			wantCode: 20002,
-			wantMsg: "task already exists",
+			wantMsg:  "task already exists",
 		},
 	}
 
@@ -101,15 +101,8 @@ func TestPredefinedErrors(t *testing.T) {
 }
 
 func TestError_AsStandardError(t *testing.T) {
-	// 验证 *Error 实现了 error 接口
-	var _ error = (*Error)(nil)
-	var _ error = New(10001, "test")
-	
-	// 可以作为标准 error 使用
-	err := New(10002, "test error")
-	errorMsg := err.Error()
-	
-	if errorMsg == "" {
+	stdErr := error(New(10002, "test error"))
+	if stdErr.Error() == "" {
 		t.Error("Error() should return non-empty string")
 	}
 }

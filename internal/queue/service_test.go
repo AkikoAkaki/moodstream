@@ -117,12 +117,12 @@ func TestEnqueue(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.mock()
 			resp, err := svc.Enqueue(context.Background(), tt.req)
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Enqueue() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if !tt.wantErr && resp != nil {
 				if !resp.Success {
 					t.Errorf("Enqueue() success = false, want true")
@@ -223,12 +223,12 @@ func TestRetrieve(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.mock()
 			resp, err := svc.Retrieve(context.Background(), tt.req)
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Retrieve() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if !tt.wantErr && resp != nil {
 				if len(resp.Tasks) != tt.wantTasks {
 					t.Errorf("Retrieve() tasks count = %d, want %d", len(resp.Tasks), tt.wantTasks)
@@ -301,12 +301,12 @@ func TestDelete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.mock()
 			resp, err := svc.Delete(context.Background(), tt.req)
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Delete() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if !tt.wantErr && resp != nil {
 				if !resp.Success {
 					t.Errorf("Delete() success = false, want true")
@@ -367,12 +367,12 @@ func TestAck(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.mock()
 			resp, err := svc.Ack(context.Background(), tt.req)
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Ack() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if !tt.wantErr && resp != nil {
 				if !resp.Success {
 					t.Errorf("Ack() success = false, want true")
@@ -444,12 +444,12 @@ func TestNack(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.mock()
 			resp, err := svc.Nack(context.Background(), tt.req)
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Nack() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if !tt.wantErr && resp != nil {
 				if !resp.Success {
 					t.Errorf("Nack() success = false, want true")

@@ -17,7 +17,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil {
+			log.Printf("close grpc connection error: %v", closeErr)
+		}
+	}()
 
 	client := pb.NewDelayQueueServiceClient(conn)
 	ctx := context.Background()
@@ -28,7 +32,7 @@ func main() {
 	// 2. 第一次提交任务（使用幂等性 key）
 	fmt.Println("1. First enqueue with idempotency_key...")
 	idempotencyKey := fmt.Sprintf("order-payment-%d", time.Now().Unix())
-	
+
 	resp1, err := client.Enqueue(ctx, &pb.EnqueueRequest{
 		Topic:          "order-payment",
 		Payload:        `{"order_id": 12345, "amount": 199.99}`,
@@ -46,13 +50,13 @@ func main() {
 
 	// 3. 第二次提交相同的任务（相同的幂等性 key）
 	time.Sleep(100 * time.Millisecond) // 稍等确保第一次写入完成
-	
+
 	fmt.Println("\n2. Second enqueue with same idempotency_key (should return same ID)...")
 	resp2, err := client.Enqueue(ctx, &pb.EnqueueRequest{
 		Topic:          "order-payment",
-		Payload:        `{"order_id": 12345, "amount": 199.99}`,  // 即使 payload 不同
+		Payload:        `{"order_id": 12345, "amount": 199.99}`, // 即使 payload 不同
 		DelaySeconds:   10,
-		IdempotencyKey: idempotencyKey,  // 相同的幂等性 key
+		IdempotencyKey: idempotencyKey, // 相同的幂等性 key
 	})
 	if err != nil {
 		log.Fatalf("Second enqueue failed: %v", err)
@@ -88,7 +92,7 @@ func main() {
 	}
 	taskID3 := resp3.Id
 	fmt.Printf("   ✅ New task created: %s\n", taskID3)
-	
+
 	if taskID3 != taskID1 {
 		fmt.Println("   ✅ Correct: Different task ID when no idempotency_key is provided")
 	} else {
@@ -109,7 +113,7 @@ func main() {
 	}
 	taskID4 := resp4.Id
 	fmt.Printf("   ✅ New task created: %s\n", taskID4)
-	
+
 	if taskID4 != taskID1 {
 		fmt.Println("   ✅ Correct: Different task ID for different idempotency_key")
 	} else {
