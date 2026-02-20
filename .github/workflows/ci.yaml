@@ -126,7 +126,7 @@ jobs:
           compression-level: 6
 
       - name: Run Security Scan (Trivy)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -179,7 +179,7 @@ jobs:
 
       - name: Install git-chglog
         run: |
-          go install github.com/git-chglog/git-chglog/cmd/git-chglog@latest
+          go install github.com/git-chglog/git-chglog/cmd/git-chglog@v0.15.4
 
       - name: Render changelog preview for reviewers
         run: |
