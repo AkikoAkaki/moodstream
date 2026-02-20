@@ -27,7 +27,7 @@ queue:
 `
 
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte(configYAML), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(configYAML), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -70,7 +70,7 @@ redis:
   db: 0
 `
 	configPath := filepath.Join(tmpDir, "custom.yaml")
-	if err := os.WriteFile(configPath, []byte(configYAML), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(configYAML), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -122,7 +122,7 @@ this is not valid YAML
   - invalid
 `
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte(invalidYAML), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(invalidYAML), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 

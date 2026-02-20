@@ -25,7 +25,9 @@ var (
 func TestMain(m *testing.M) {
 	code := m.Run()
 	if queueTCContainer != nil {
-		_ = queueTCContainer.Terminate(context.Background())
+		if err := queueTCContainer.Terminate(context.Background()); err != nil {
+			fmt.Fprintf(os.Stderr, "terminate queue redis container: %v\n", err)
+		}
 	}
 	os.Exit(code)
 }
@@ -42,8 +44,12 @@ func newIntegrationService(t *testing.T) (*Service, *redisstore.Store) {
 		t.Fatalf("flush redis: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = store.GetClient().FlushDB(context.Background()).Err()
-		_ = store.GetClient().Close()
+		if err := store.GetClient().FlushDB(context.Background()).Err(); err != nil {
+			t.Logf("cleanup redis db: %v", err)
+		}
+		if err := store.GetClient().Close(); err != nil {
+			t.Logf("close redis client: %v", err)
+		}
 	})
 
 	return NewService(store), store
@@ -72,14 +78,20 @@ func ensureQueueRedisContainer(t *testing.T) string {
 
 		host, err := container.Host(ctx)
 		if err != nil {
-			_ = container.Terminate(ctx)
+			if termErr := container.Terminate(ctx); termErr != nil {
+				queueTCSetupErr = fmt.Errorf("resolve redis host: %w; terminate container: %v", err, termErr)
+				return
+			}
 			queueTCSetupErr = fmt.Errorf("resolve redis host: %w", err)
 			return
 		}
 
 		port, err := container.MappedPort(ctx, "6379/tcp")
 		if err != nil {
-			_ = container.Terminate(ctx)
+			if termErr := container.Terminate(ctx); termErr != nil {
+				queueTCSetupErr = fmt.Errorf("resolve redis port: %w; terminate container: %v", err, termErr)
+				return
+			}
 			queueTCSetupErr = fmt.Errorf("resolve redis port: %w", err)
 			return
 		}

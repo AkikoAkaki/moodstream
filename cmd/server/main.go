@@ -24,14 +24,24 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
+var (
+	Version   = "dev"
+	BuildTime = "unknown"
+)
+
 func main() {
 	var (
 		configFile = flag.String("config", "", "Path to config file, e.g. ./config/config.yaml")
 		configDir  = flag.String("config-dir", "", "Directory containing config.yaml")
 		grpcPort   = flag.Int("grpc-port", 0, "Override gRPC port")
 		redisAddr  = flag.String("redis-addr", "", "Override Redis address")
+		showVer    = flag.Bool("version", false, "Print version information and exit")
 	)
 	flag.Parse()
+	if *showVer {
+		fmt.Printf("server version=%s build_time=%s\n", Version, BuildTime)
+		return
+	}
 
 	cfg, err := conf.LoadWithOptions(conf.LoadOptions{
 		ConfigFile: *configFile,
@@ -97,8 +107,9 @@ func startMetricsServer(addr string) *http.Server {
 	mux.Handle("/metrics", promhttp.Handler())
 
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: mux,
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {
