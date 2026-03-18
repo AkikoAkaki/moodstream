@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package stream;
+
+option go_package = "github.com/AkikoAkaki/async-task-platform/api/proto;pb";
+
+// InteractionEvent is a single danmu/comment event from a video session.
+message InteractionEvent {
+  string video_id     = 1; // video session identifier
+  int64  timestamp_ms = 2; // video playback position in milliseconds (not wall clock)
+  string raw_text     = 3; // danmu / comment content
+  string user_id      = 4; // optional sender identifier
+}
+
+// PushAck is returned after a client streaming session completes.
+message PushAck {
+  bool   success = 1;
+  string error   = 2;
+}
+
+// WindowResult is the LLM-processed output for one aggregation window.
+message WindowResult {
+  string video_id     = 1;
+  int64  window_start = 2; // inclusive, video timestamp ms
+  int64  window_end   = 3; // inclusive, video timestamp ms
+  string emotion_tag  = 4; // e.g. "excited", "confused", "amused"
+  string core_topic   = 5; // one-line summary of what viewers reacted to
+  int32  event_count  = 6; // number of events in this window
+  int64  processed_at = 7; // wall-clock unix ms when result was produced (for latency display)
+}
+
+// StreamService ingests interaction events and returns processed results via SSE.
+service StreamService {
+  // PushEvents accepts a client-side stream of events and acknowledges on close.
+  rpc PushEvents(stream InteractionEvent) returns (PushAck);
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
 	"github.com/AkikoAkaki/async-task-platform/internal/storage"
 	"github.com/redis/go-redis/v9"
 )
@@ -31,7 +32,7 @@ func eventKey(videoID string) string {
 	return fmt.Sprintf("stream:%s:events", videoID)
 }
 
-func (s *Store) PushEvent(ctx context.Context, videoID string, event *storage.InteractionEvent) error {
+func (s *Store) PushEvent(ctx context.Context, videoID string, event *pb.InteractionEvent) error {
 	data, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("marshal event: %w", err)
@@ -42,7 +43,7 @@ func (s *Store) PushEvent(ctx context.Context, videoID string, event *storage.In
 	}).Err()
 }
 
-func (s *Store) FetchWindow(ctx context.Context, videoID string, fromMs, toMs int64) ([]*storage.InteractionEvent, error) {
+func (s *Store) FetchWindow(ctx context.Context, videoID string, fromMs, toMs int64) ([]*pb.InteractionEvent, error) {
 	results, err := s.client.Eval(ctx, luaFetchWindow, []string{eventKey(videoID)},
 		fromMs, toMs,
 	).StringSlice()
@@ -50,9 +51,9 @@ func (s *Store) FetchWindow(ctx context.Context, videoID string, fromMs, toMs in
 		return nil, fmt.Errorf("fetch window: %w", err)
 	}
 
-	events := make([]*storage.InteractionEvent, 0, len(results))
+	events := make([]*pb.InteractionEvent, 0, len(results))
 	for _, raw := range results {
-		var e storage.InteractionEvent
+		var e pb.InteractionEvent
 		if err := json.Unmarshal([]byte(raw), &e); err != nil {
 			continue
 		}

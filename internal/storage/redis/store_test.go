@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/AkikoAkaki/async-task-platform/internal/storage"
+	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -37,19 +36,11 @@ func testStore(t *testing.T) *Store {
 	if testing.Short() {
 		t.Skip("skipping integration tests in short mode")
 	}
-
-	addr := ensureRedisContainer(t)
-	store := NewStore(addr)
-
-	// Isolate keys per test
-	prefix := "it:" + strings.ToLower(strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
-	store.client.FlushDB(context.Background())
-
+	store := NewStore(ensureRedisContainer(t))
 	t.Cleanup(func() {
 		store.client.FlushDB(context.Background())
 		store.client.Close()
 	})
-	_ = prefix
 	return store
 }
 
@@ -103,10 +94,10 @@ func TestStoreIntegration_PushAndFetchWindow(t *testing.T) {
 	ctx := context.Background()
 	videoID := "v1"
 
-	events := []*storage.InteractionEvent{
-		{VideoID: videoID, TimestampMs: 1000, RawText: "hello"},
-		{VideoID: videoID, TimestampMs: 3000, RawText: "world"},
-		{VideoID: videoID, TimestampMs: 6000, RawText: "outside window"},
+	events := []*pb.InteractionEvent{
+		{VideoId: videoID, TimestampMs: 1000, RawText: "hello"},
+		{VideoId: videoID, TimestampMs: 3000, RawText: "world"},
+		{VideoId: videoID, TimestampMs: 6000, RawText: "outside window"},
 	}
 	for _, e := range events {
 		if err := store.PushEvent(ctx, videoID, e); err != nil {
@@ -122,7 +113,7 @@ func TestStoreIntegration_PushAndFetchWindow(t *testing.T) {
 		t.Fatalf("FetchWindow returned %d events, want 2", len(got))
 	}
 
-	// Verify atomic delete: second fetch of same range returns empty
+	// Verify atomic delete: second fetch of same range returns empty.
 	got2, err := store.FetchWindow(ctx, videoID, 0, 5000)
 	if err != nil {
 		t.Fatalf("FetchWindow (second): %v", err)
@@ -131,10 +122,10 @@ func TestStoreIntegration_PushAndFetchWindow(t *testing.T) {
 		t.Fatalf("expected empty second fetch, got %d events", len(got2))
 	}
 
-	// Event outside window still present
+	// Event outside window still present.
 	got3, err := store.FetchWindow(ctx, videoID, 6000, 6000)
 	if err != nil {
-		t.Fatalf("FetchWindow (outside): %v", err)
+		t.Fatalf("FetchWindow (outside window): %v", err)
 	}
 	if len(got3) != 1 {
 		t.Fatalf("expected 1 outside-window event, got %d", len(got3))
@@ -145,7 +136,7 @@ func TestStoreIntegration_EmptyWindow(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
 
-	got, err := store.FetchWindow(ctx, "empty-video", 0, 9999)
+	got, err := store.FetchWindow(ctx, "no-such-video", 0, 9999)
 	if err != nil {
 		t.Fatalf("FetchWindow on empty key: %v", err)
 	}
