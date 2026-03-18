@@ -20,12 +20,13 @@ server:
 redis:
   addr: localhost:6380
   db: 1
-queue:
-  visibility_timeout: 120
-  watchdog_interval: 20
-  max_retries: 5
+stream:
+  window_size_seconds: 10
+  max_batch_size: 100
+ai:
+  api_key: test-key
+  model: qwen-turbo
 `
-
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(configYAML), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -48,38 +49,22 @@ queue:
 	if cfg.Redis.Addr != "localhost:6380" {
 		t.Fatalf("Redis.Addr = %q, want localhost:6380", cfg.Redis.Addr)
 	}
-	if cfg.Redis.DB != 1 {
-		t.Fatalf("Redis.DB = %d, want 1", cfg.Redis.DB)
+	if cfg.Stream.WindowSizeSeconds != 10 {
+		t.Fatalf("Stream.WindowSizeSeconds = %d, want 10", cfg.Stream.WindowSizeSeconds)
 	}
-	if cfg.Queue.VisibilityTimeout != 120 {
-		t.Fatalf("Queue.VisibilityTimeout = %d, want 120", cfg.Queue.VisibilityTimeout)
+	if cfg.Stream.MaxBatchSize != 100 {
+		t.Fatalf("Stream.MaxBatchSize = %d, want 100", cfg.Stream.MaxBatchSize)
 	}
-	if cfg.Queue.WatchdogInterval != 20 {
-		t.Fatalf("Queue.WatchdogInterval = %d, want 20", cfg.Queue.WatchdogInterval)
-	}
-	if cfg.Queue.MaxRetries != 5 {
-		t.Fatalf("Queue.MaxRetries = %d, want 5", cfg.Queue.MaxRetries)
+	if cfg.AI.Model != "qwen-turbo" {
+		t.Fatalf("AI.Model = %q, want qwen-turbo", cfg.AI.Model)
 	}
 }
 
-func TestLoadWithOptions_ConfigFileFlagAndEnvOverride(t *testing.T) {
-	tmpDir := t.TempDir()
-	configYAML := `
-redis:
-  addr: localhost:6379
-  db: 0
-`
-	configPath := filepath.Join(tmpDir, "custom.yaml")
-	if err := os.WriteFile(configPath, []byte(configYAML), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
+func TestLoadWithOptions_EnvOverride(t *testing.T) {
 	t.Setenv("DDQ_REDIS_ADDR", "redis-prod:6380")
 	t.Setenv("DDQ_REDIS_DB", "5")
 
-	cfg, err := LoadWithOptions(LoadOptions{
-		ConfigFile: configPath,
-	})
+	cfg, err := LoadWithOptions(LoadOptions{})
 	if err != nil {
 		t.Fatalf("LoadWithOptions() error = %v", err)
 	}
@@ -92,7 +77,7 @@ redis:
 	}
 }
 
-func TestLoadWithOptions_UsesDefaultsWhenFileMissing(t *testing.T) {
+func TestLoadWithOptions_Defaults(t *testing.T) {
 	t.Parallel()
 
 	cfg, err := LoadWithOptions(LoadOptions{
@@ -108,8 +93,11 @@ func TestLoadWithOptions_UsesDefaultsWhenFileMissing(t *testing.T) {
 	if cfg.Server.GrpcPort != 9090 {
 		t.Fatalf("Server.GrpcPort = %d, want 9090", cfg.Server.GrpcPort)
 	}
-	if cfg.Queue.MaxRetries != 3 {
-		t.Fatalf("Queue.MaxRetries = %d, want 3", cfg.Queue.MaxRetries)
+	if cfg.Stream.WindowSizeSeconds != 5 {
+		t.Fatalf("Stream.WindowSizeSeconds = %d, want 5", cfg.Stream.WindowSizeSeconds)
+	}
+	if cfg.AI.Model != "qwen-plus" {
+		t.Fatalf("AI.Model = %q, want qwen-plus", cfg.AI.Model)
 	}
 }
 

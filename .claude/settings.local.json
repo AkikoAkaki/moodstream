@@ -7,7 +7,10 @@
       "WebFetch(domain:github.com)",
       "Bash(curl -s \"https://raw.githubusercontent.com/SpillwaveSolutions/mastering-typescript-skill/main/SKILL.md\")",
       "Bash(curl -s \"https://raw.githubusercontent.com/SpillwaveSolutions/mastering-typescript-skill/refs/heads/main/SKILL.md\")",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(go build:*)",
+      "Bash(go mod:*)",
+      "Bash(go test:*)"
     ]
   }
 }

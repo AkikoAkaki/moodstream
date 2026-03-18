@@ -15,7 +15,8 @@ type Config struct {
 	App    AppConfig    `mapstructure:"app"`
 	Server ServerConfig `mapstructure:"server"`
 	Redis  RedisConfig  `mapstructure:"redis"`
-	Queue  QueueConfig  `mapstructure:"queue"`
+	Stream StreamConfig `mapstructure:"stream"`
+	AI     AIConfig     `mapstructure:"ai"`
 }
 
 type AppConfig struct {
@@ -34,13 +35,17 @@ type RedisConfig struct {
 	DB       int    `mapstructure:"db"`
 }
 
-type QueueConfig struct {
-	// VisibilityTimeout is the running-state timeout in seconds before watchdog recovery.
-	VisibilityTimeout int `mapstructure:"visibility_timeout"`
-	// WatchdogInterval is the watchdog scan interval in seconds.
-	WatchdogInterval int `mapstructure:"watchdog_interval"`
-	// MaxRetries is the default retry budget for tasks.
-	MaxRetries int `mapstructure:"max_retries"`
+type StreamConfig struct {
+	// WindowSizeSeconds is the tumbling window duration for the aggregator.
+	WindowSizeSeconds int `mapstructure:"window_size_seconds"`
+	// MaxBatchSize caps the number of events sampled per window before sending to LLM.
+	MaxBatchSize int `mapstructure:"max_batch_size"`
+}
+
+type AIConfig struct {
+	APIKey  string `mapstructure:"api_key"`
+	BaseURL string `mapstructure:"base_url"`
+	Model   string `mapstructure:"model"`
 }
 
 type LoadOptions struct {
@@ -140,7 +145,6 @@ func configureConfigSource(v *viper.Viper, opts LoadOptions) {
 		return
 	}
 
-	// Default search order when no explicit path is provided.
 	v.AddConfigPath(".")
 	v.AddConfigPath("config")
 }
@@ -156,7 +160,9 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("redis.password", "")
 	v.SetDefault("redis.db", 0)
 
-	v.SetDefault("queue.visibility_timeout", 60)
-	v.SetDefault("queue.watchdog_interval", 30)
-	v.SetDefault("queue.max_retries", 3)
+	v.SetDefault("stream.window_size_seconds", 5)
+	v.SetDefault("stream.max_batch_size", 200)
+
+	v.SetDefault("ai.base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+	v.SetDefault("ai.model", "qwen-plus")
 }
