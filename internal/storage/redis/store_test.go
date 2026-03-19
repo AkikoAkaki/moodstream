@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -31,14 +32,24 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// testStore returns a Store with a per-test namespace so each test owns
+// its own key prefix. Cleanup deletes only those keys, not the whole DB.
 func testStore(t *testing.T) *Store {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("skipping integration tests in short mode")
 	}
 	store := NewStore(ensureRedisContainer(t))
+	store.namespace = strings.ToLower(
+		strings.NewReplacer("/", "_", " ", "_", "-", "_").Replace(t.Name()),
+	)
 	t.Cleanup(func() {
-		store.client.FlushDB(context.Background())
+		ctx := context.Background()
+		pattern := "stream:" + store.namespace + ":*"
+		keys, _ := store.client.Keys(ctx, pattern).Result()
+		if len(keys) > 0 {
+			store.client.Del(ctx, keys...)
+		}
 		store.client.Close()
 	})
 	return store

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/AkikoAkaki/async-task-platform/internal/conf"
 	"github.com/AkikoAkaki/async-task-platform/internal/storage/redis"
@@ -27,18 +29,20 @@ func main() {
 	}
 	log.Printf("starting %s [%s] version=%s", cfg.App.Name, cfg.App.Env, Version)
 
-	_ = redis.NewStore(cfg.Redis.Addr)
+	store := redis.NewStore(cfg.Redis.Addr)
+	defer store.Close()
 
 	// TODO Phase 3: wire SSEBroadcaster, Aggregator, gRPC StreamService
 
 	grpcAddr := fmt.Sprintf(":%d", cfg.Server.GrpcPort)
 	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		log.Fatalf("failed to listen on %s: %v", grpcAddr, err)
 	}
 
 	grpcSrv := grpc.NewServer()
 	reflection.Register(grpcSrv)
+	// TODO Phase 3: pb.RegisterStreamServiceServer(grpcSrv, streamSvc)
 
 	go func() {
 		log.Printf("gRPC server listening at %v", lis.Addr())
@@ -59,7 +63,7 @@ func main() {
 	go func() {
 		log.Printf("HTTP server listening at %s", httpAddr)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("HTTP server error: %v", err)
+			log.Fatalf("HTTP server error: %v", err)
 		}
 	}()
 
@@ -70,5 +74,12 @@ func main() {
 
 	log.Println("shutting down...")
 	grpcSrv.GracefulStop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := httpSrv.Shutdown(ctx); err != nil {
+		log.Printf("HTTP server shutdown error: %v", err)
+	}
+
 	log.Println("server stopped")
 }
