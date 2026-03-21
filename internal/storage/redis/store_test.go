@@ -50,7 +50,7 @@ func testStore(t *testing.T) *Store {
 		if len(keys) > 0 {
 			store.client.Del(ctx, keys...)
 		}
-		store.client.Close()
+		_ = store.client.Close()
 	})
 	return store
 }
@@ -78,14 +78,14 @@ func ensureRedisContainer(t *testing.T) string {
 
 		host, err := container.Host(ctx)
 		if err != nil {
-			container.Terminate(ctx)
+			_ = container.Terminate(ctx)
 			storeTCSetupErr = fmt.Errorf("resolve redis host: %w", err)
 			return
 		}
 
 		port, err := container.MappedPort(ctx, "6379/tcp")
 		if err != nil {
-			container.Terminate(ctx)
+			_ = container.Terminate(ctx)
 			storeTCSetupErr = fmt.Errorf("resolve redis port: %w", err)
 			return
 		}

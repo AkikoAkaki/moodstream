@@ -30,7 +30,7 @@ func main() {
 	log.Printf("starting %s [%s] version=%s", cfg.App.Name, cfg.App.Env, Version)
 
 	store := redis.NewStore(cfg.Redis.Addr)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// TODO Phase 3: wire SSEBroadcaster, Aggregator, gRPC StreamService
 
@@ -54,12 +54,12 @@ func main() {
 	httpMux := http.NewServeMux()
 	httpMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ok")
+		_, _ = fmt.Fprintln(w, "ok")
 	})
 	// TODO Phase 3: POST /events/push, GET /stream/results
 
 	httpAddr := fmt.Sprintf(":%d", cfg.Server.Port)
-	httpSrv := &http.Server{Addr: httpAddr, Handler: httpMux}
+	httpSrv := &http.Server{Addr: httpAddr, Handler: httpMux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		log.Printf("HTTP server listening at %s", httpAddr)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
