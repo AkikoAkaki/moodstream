@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr:*)",
+      "WebSearch",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/SpillwaveSolutions/mastering-typescript-skill/main/SKILL.md\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/SpillwaveSolutions/mastering-typescript-skill/refs/heads/main/SKILL.md\")",
+      "Bash(curl:*)",
+      "Bash(go build:*)",
+      "Bash(go mod:*)",
+      "Bash(go test:*)"
+    ]
+  }
+}

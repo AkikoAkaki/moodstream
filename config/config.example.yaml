@@ -1,40 +1,25 @@
-# Async Task Platform Configuration
-# Copy this file to config.yaml and customize as needed
+# Real-Time Stream Processing Platform — Configuration
+# Copy to config.yaml and fill in your values.
+# Override any key via env var with prefix DDQ_ (e.g. DDQ_REDIS_ADDR, DDQ_AI_API_KEY).
 
 app:
   name: "async-task-platform"
-  env: "local"  # Options: local, dev, staging, prod
+  env: "local"  # local | dev | prod
 
 server:
-  port: 8080       # HTTP port (reserved for future metrics/health endpoints)
-  grpc_port: 9090  # gRPC service port
+  port: 8080      # HTTP server (SSE + REST)
+  grpc_port: 9090 # gRPC StreamService
 
 redis:
   addr: "localhost:6379"
-  password: ""     # Leave empty for local development
-  db: 0            # Redis database index
+  password: ""
+  db: 0
 
-queue:
-  # Visibility timeout: seconds a task can be "in-flight" before being recovered
-  # If a worker doesn't Ack within this time, Watchdog re-enqueues the task
-  visibility_timeout: 60
+stream:
+  window_size_seconds: 5   # tumbling window: how often aggregator fires
+  max_batch_size: 200      # if window has >N events, randomly sample down to N before LLM call
 
-  # Watchdog interval: how often the Watchdog scans for stuck tasks
-  watchdog_interval: 30
-
-  # Default max retries: tasks exceeding this limit go to Dead Letter Queue
-  max_retries: 3
-
-# Future configuration sections (not yet implemented):
-# 
-# scheduler:
-#   leader_election: true
-#   lease_duration: 15  # seconds
-# 
-# metrics:
-#   enabled: true
-#   path: "/metrics"
-# 
-# tracing:
-#   enabled: false
-#   endpoint: "http://localhost:4317"
+ai:
+  api_key: ""              # required — set via DDQ_AI_API_KEY in production
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  model: "qwen-plus"       # qwen-plus | qwen-turbo | qwen-max

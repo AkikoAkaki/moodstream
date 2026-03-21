@@ -11,7 +11,11 @@ redis:
   password: ""
   db: 0
 
-queue:
-  visibility_timeout: 60 # 60秒没处理完，就认为 Worker 挂了
-  watchdog_interval: 30  # 每 30秒检查一次
-  max_retries: 3         # 默认重试 3 次
+stream:
+  window_size_seconds: 5  # tumbling window duration
+  max_batch_size: 200     # max events sampled per window before LLM call
+
+ai:
+  api_key: ""             # set via DDQ_AI_API_KEY env var
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  model: "qwen-plus"

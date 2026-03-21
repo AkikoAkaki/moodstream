@@ -1,64 +1,40 @@
-# Async Task Platform
+# Real-Time Multimodal Interaction Platform
 
 [![Go Version](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)](https://go.dev/)
 [![Redis](https://img.shields.io/badge/Redis-7.x-DC382D?logo=redis&logoColor=white)](https://redis.io/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Async Task Platform is a Redis-backed, gRPC-based asynchronous task scheduler designed for high-throughput concurrent processing and distributed fault tolerance.
+A real-time stream processing platform that ingests high-concurrency danmu (bullet comment) streams, performs LLM-based accessibility analysis using tumbling-window aggregation, and pushes results to clients via Server-Sent Events.
 
-v0.2.0 includes:
-- Delayed task enqueue/retrieve/ack/nack/delete API loop.
-- Worker Pool execution model (`1 Fetcher + N Processor`) with bounded in-memory queue.
-- Watchdog recovery with Redis lease-based leader election (`SETNX + TTL`) to avoid multi-node scan storms.
-- Integration tests using real Redis containers (`testcontainers-go`).
-
-## Overview
-
-This project targets production-grade scheduling fundamentals:
-- Atomic retrieval and state transition (`pending -> running`) via Lua scripts.
-- Retry and dead-letter handling (`nack`, max retry budget).
-- Idempotent enqueue support:
-  - `idempotency_key` for request-level deduplication.
-  - custom `id` deduplication via Redis atomic reservation.
-- Idempotent delete behavior for safe retries by clients.
+Built on Go + Redis ZSet + Lua atomic operations. Originally a distributed delay queue MVP; refactored into an HCI-oriented interactive log processing system.
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    P["Producer / API Client"] -->|"Enqueue/Delete via gRPC"| S[Server]
-    S --> Q[Queue Service]
-    Q --> R[(Redis)]
-
-    subgraph WorkerNode["Worker Process"]
-        F[Fetcher x1]
-        B[Bounded Task Channel]
-        PR[Processor Pool xN]
-        F -->|"Retrieve(batch)"| B
-        B --> PR
-        PR -->|"Ack/Nack"| S
-    end
-
-    subgraph SchedulerCluster["Server Cluster"]
-        W1[Watchdog Instance A]
-        W2[Watchdog Instance B]
-        W3[Watchdog Instance C]
-    end
-
-    W1 -->|"TryAcquireWatchdogLeader"| R
-    W2 -->|"TryAcquireWatchdogLeader"| R
-    W3 -->|"TryAcquireWatchdogLeader"| R
-    R -->|"SETNX + TTL lease"| LEADER["Single Active Watchdog"]
-    LEADER -->|"CheckAndMoveExpired"| R
+```
+[React Frontend]
+  ├── Left panel:  Danmu injection (POST /events/push)
+  └── Right panel: SSE results    (GET /stream/results)
+              ↕ SSE
+[Go Server]
+  ├── gRPC Server (:9090)  → StreamService.PushEvents (Client Streaming)
+  │     └── writes to Redis ZSet: stream:{video_id}:events (score=timestamp_ms)
+  ├── HTTP Server (:8080)
+  │     ├── POST /events/push    → JSON ingestion for frontend
+  │     └── GET  /stream/results → SSE broadcast endpoint
+  └── Aggregator goroutine (tumbling window, 5s)
+        ├── Lua atomic fetch: ZRANGEBYSCORE + ZREMRANGEBYSCORE
+        ├── Calls LLM API (Qwen / OpenAI-compatible)
+        └── Broadcasts WindowResult to all SSE subscribers
+[Redis]
+  └── stream:{video_id}:events — ZSet (score = video timestamp_ms)
 ```
 
-### Key Redis Structures
-- `ddq:tasks` (ZSet): pending delayed tasks
-- `ddq:running` (Hash): in-flight tasks with start timestamp
-- `ddq:dlq` (List): dead-letter tasks
-- `ddq:idempotency:*` (String): `idempotency_key -> task_id`
-- `ddq:taskid:*` (String): custom task id reservation
-- `ddq:watchdog:leader` (String): watchdog leader lease key
+**Data flow**:
+1. Client streams `InteractionEvent` (video_id, timestamp_ms, raw_text) via gRPC or HTTP POST
+2. Events land in Redis ZSet keyed by video playback position
+3. Every 5 seconds, a Lua script atomically fetches the current window's events and removes them (no duplicate processing)
+4. LLM extracts `emotion_tag` + `core_topic` from the batch
+5. `WindowResult` is broadcast to all connected SSE clients in real time
 
 ## Quick Start
 
@@ -66,81 +42,64 @@ flowchart TD
 - Go 1.25+
 - Docker / Docker Desktop
 - `make`
-- `grpcurl` (`go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest`)
+- `grpcurl` (optional, for manual testing)
 
-### 1) Start Redis
+### Run
 
 ```bash
+# Start Redis
 make up
-```
 
-### 2) Start Server
-
-```bash
+# Start server (gRPC :9090 + HTTP :8080)
 make run-server
 ```
 
-### 3) Start Worker
+### Test the pipeline
 
 ```bash
-make run-worker
+# Health check
+curl http://localhost:8080/healthz
+
+# Push a danmu event
+curl -X POST http://localhost:8080/events/push \
+  -H 'Content-Type: application/json' \
+  -d '{"video_id":"v1","timestamp_ms":3000,"raw_text":"这里好好笑哈哈哈"}'
+
+# Stream results (blocks, open in separate terminal)
+curl -N http://localhost:8080/stream/results
+
+# gRPC service listing
+grpcurl -plaintext localhost:9090 list
 ```
 
-You can also run with explicit Worker Pool settings:
+### Frontend
+
+> **Note:** The React frontend (`web/`) and `api/proto/stream.proto` are under active development (Phase 4). The backend server and Redis pipeline are functional independently.
 
 ```bash
-go run cmd/worker/main.go \
-  -server-addr localhost:9090 \
-  -processors 8 \
-  -queue-capacity 256 \
-  -batch-size 32 \
-  -poll-interval 500ms
-```
-
-### 4) Submit Tasks via gRPC
-
-Enqueue:
-
-```bash
-grpcurl -plaintext -d '{
-  "id": "order-1001-timeout",
-  "topic": "order-timeout",
-  "payload": "{\"order_id\":1001}",
-  "delay_seconds": 10,
-  "max_retries": 3
-}' localhost:9090 api.queue.DelayQueueService/Enqueue
-```
-
-Delete:
-
-```bash
-grpcurl -plaintext -d '{
-  "id": "order-1001-timeout"
-}' localhost:9090 api.queue.DelayQueueService/Delete
-```
-
-### 5) Stop Redis
-
-```bash
-make down
+cd web && npm install && npm run dev
+# Open http://localhost:5173
 ```
 
 ## Development
 
-Common targets:
-
 ```bash
-make fmt
-make lint
-make test
+make test        # run all tests with race detector
+make lint        # golangci-lint
+make proto       # regenerate protobuf from api/proto/stream.proto
+make build-server
 ```
 
-Run focused integration suites:
+## Config
 
-```bash
-go test ./internal/storage/redis -run TestStoreIntegration -count=1
-go test ./internal/queue -run TestServiceIntegration -count=1
-```
+Loaded from `./config.yaml` or `./config/config.yaml`. Override via env vars with prefix `DDQ_`:
+
+| Env Var | Description |
+|---|---|
+| `DDQ_REDIS_ADDR` | Redis address (default `localhost:6379`) |
+| `DDQ_AI_API_KEY` | LLM API key (Qwen / OpenAI-compatible) |
+| `DDQ_AI_BASE_URL` | LLM base URL |
+| `DDQ_STREAM_WINDOW_SIZE_SECONDS` | Aggregation window size (default `5`) |
 
 ## License
 

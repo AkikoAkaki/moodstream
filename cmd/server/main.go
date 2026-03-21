@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
-	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -13,13 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
 	"github.com/AkikoAkaki/async-task-platform/internal/conf"
-	"github.com/AkikoAkaki/async-task-platform/internal/observability"
-	"github.com/AkikoAkaki/async-task-platform/internal/queue"
-	"github.com/AkikoAkaki/async-task-platform/internal/scheduler"
 	"github.com/AkikoAkaki/async-task-platform/internal/storage/redis"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -30,57 +23,53 @@ var (
 )
 
 func main() {
-	var (
-		configFile = flag.String("config", "", "Path to config file, e.g. ./config/config.yaml")
-		configDir  = flag.String("config-dir", "", "Directory containing config.yaml")
-		grpcPort   = flag.Int("grpc-port", 0, "Override gRPC port")
-		redisAddr  = flag.String("redis-addr", "", "Override Redis address")
-		showVer    = flag.Bool("version", false, "Print version information and exit")
-	)
-	flag.Parse()
-	if *showVer {
-		fmt.Printf("server version=%s build_time=%s\n", Version, BuildTime)
-		return
-	}
-
-	cfg, err := conf.LoadWithOptions(conf.LoadOptions{
-		ConfigFile: *configFile,
-		ConfigDir:  *configDir,
-	})
+	cfg, err := conf.LoadWithOptions(conf.LoadOptions{})
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
-
-	// Flag overrides have highest priority over file/env defaults.
-	if *grpcPort > 0 {
-		cfg.Server.GrpcPort = *grpcPort
-	}
-	if *redisAddr != "" {
-		cfg.Redis.Addr = *redisAddr
-	}
-
-	log.Printf("Starting %s [%s]...", cfg.App.Name, cfg.App.Env)
-	metricsSrv := startMetricsServer(":8081")
+	log.Printf("starting %s [%s] version=%s", cfg.App.Name, cfg.App.Env, Version)
 
 	store := redis.NewStore(cfg.Redis.Addr)
-	wd := scheduler.NewWatchdog(cfg.Queue, store)
-	wd.Start()
+	defer func() {
+		if err := store.Close(); err != nil {
+			log.Printf("store close error: %v", err)
+		}
+	}()
 
-	addr := fmt.Sprintf(":%d", cfg.Server.GrpcPort)
-	lis, err := net.Listen("tcp", addr)
+	// TODO Phase 3: wire SSEBroadcaster, Aggregator, gRPC StreamService
+
+	grpcAddr := fmt.Sprintf(":%d", cfg.Server.GrpcPort)
+	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		log.Fatalf("failed to listen on %s: %v", grpcAddr, err)
 	}
 
-	s := grpc.NewServer()
-	svc := queue.NewService(store)
-	pb.RegisterDelayQueueServiceServer(s, svc)
-	reflection.Register(s)
+	grpcSrv := grpc.NewServer()
+	reflection.Register(grpcSrv)
+	// TODO Phase 3: pb.RegisterStreamServiceServer(grpcSrv, streamSvc)
 
 	go func() {
 		log.Printf("gRPC server listening at %v", lis.Addr())
-		if serveErr := s.Serve(lis); serveErr != nil {
-			log.Fatalf("failed to serve: %v", serveErr)
+		if err := grpcSrv.Serve(lis); err != nil {
+			log.Fatalf("gRPC serve error: %v", err)
+		}
+	}()
+
+	httpMux := http.NewServeMux()
+	httpMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if _, err := fmt.Fprintln(w, "ok"); err != nil {
+			log.Printf("healthz write error: %v", err)
+		}
+	})
+	// TODO Phase 3: POST /events/push, GET /stream/results
+
+	httpAddr := fmt.Sprintf(":%d", cfg.Server.Port)
+	httpSrv := &http.Server{Addr: httpAddr, Handler: httpMux, ReadHeaderTimeout: 10 * time.Second}
+	go func() {
+		log.Printf("HTTP server listening at %s", httpAddr)
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("HTTP server error: %v", err)
 		}
 	}()
 
@@ -89,35 +78,14 @@ func main() {
 	defer signal.Stop(quit)
 	<-quit
 
-	log.Println("Shutting down gRPC server...")
-	wd.Stop()
-	s.GracefulStop()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	log.Println("shutting down...")
+	grpcSrv.GracefulStop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := metricsSrv.Shutdown(ctx); err != nil {
-		log.Printf("metrics server shutdown error: %v", err)
-	}
-	log.Println("Server stopped")
-}
-
-func startMetricsServer(addr string) *http.Server {
-	observability.Register()
-
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
-
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
+	if err := httpSrv.Shutdown(ctx); err != nil {
+		log.Printf("HTTP server shutdown error: %v", err)
 	}
 
-	go func() {
-		log.Printf("metrics server listening at %s/metrics", addr)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("metrics server error: %v", err)
-		}
-	}()
-
-	return srv
+	log.Println("server stopped")
 }
