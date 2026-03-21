@@ -30,7 +30,11 @@ func main() {
 	log.Printf("starting %s [%s] version=%s", cfg.App.Name, cfg.App.Env, Version)
 
 	store := redis.NewStore(cfg.Redis.Addr)
-	defer func() { _ = store.Close() }()
+	defer func() {
+		if err := store.Close(); err != nil {
+			log.Printf("store close error: %v", err)
+		}
+	}()
 
 	// TODO Phase 3: wire SSEBroadcaster, Aggregator, gRPC StreamService
 
@@ -54,7 +58,9 @@ func main() {
 	httpMux := http.NewServeMux()
 	httpMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintln(w, "ok")
+		if _, err := fmt.Fprintln(w, "ok"); err != nil {
+			log.Printf("healthz write error: %v", err)
+		}
 	})
 	// TODO Phase 3: POST /events/push, GET /stream/results
 

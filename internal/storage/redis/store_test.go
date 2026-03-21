@@ -46,11 +46,13 @@ func testStore(t *testing.T) *Store {
 	t.Cleanup(func() {
 		ctx := context.Background()
 		pattern := "stream:" + store.namespace + ":*"
-		keys, _ := store.client.Keys(ctx, pattern).Result()
-		if len(keys) > 0 {
+		keys, err := store.client.Keys(ctx, pattern).Result()
+		if err == nil && len(keys) > 0 {
 			store.client.Del(ctx, keys...)
 		}
-		_ = store.client.Close()
+		if err := store.client.Close(); err != nil {
+			t.Logf("store cleanup close error: %v", err)
+		}
 	})
 	return store
 }
@@ -78,15 +80,21 @@ func ensureRedisContainer(t *testing.T) string {
 
 		host, err := container.Host(ctx)
 		if err != nil {
-			_ = container.Terminate(ctx)
-			storeTCSetupErr = fmt.Errorf("resolve redis host: %w", err)
+			if termErr := container.Terminate(ctx); termErr != nil {
+				storeTCSetupErr = fmt.Errorf("terminate container after host error: %w", termErr)
+			} else {
+				storeTCSetupErr = fmt.Errorf("resolve redis host: %w", err)
+			}
 			return
 		}
 
 		port, err := container.MappedPort(ctx, "6379/tcp")
 		if err != nil {
-			_ = container.Terminate(ctx)
-			storeTCSetupErr = fmt.Errorf("resolve redis port: %w", err)
+			if termErr := container.Terminate(ctx); termErr != nil {
+				storeTCSetupErr = fmt.Errorf("terminate container after port error: %w", termErr)
+			} else {
+				storeTCSetupErr = fmt.Errorf("resolve redis port: %w", err)
+			}
 			return
 		}
 
