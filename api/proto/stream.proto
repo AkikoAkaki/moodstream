@@ -10,6 +10,7 @@ message InteractionEvent {
   int64  timestamp_ms = 2; // video playback position in milliseconds (not wall clock)
   string raw_text     = 3; // danmu / comment content
   string user_id      = 4; // optional sender identifier
+  int32  repeat_count = 5; // number of merged identical events (set by batcher; 0 means 1)
 }
 
 // PushAck is returned after a client streaming session completes.
