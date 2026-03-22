@@ -8,7 +8,6 @@ import (
 
 	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
 	"github.com/AkikoAkaki/async-task-platform/internal/storage"
-	"google.golang.org/protobuf/proto"
 )
 
 // Batcher is an in-memory "high-frequency repetition word merging" interceptor
@@ -74,13 +73,21 @@ func (b *Batcher) Submit(event *pb.InteractionEvent) {
 
 	if entry, exists := vidBuf[text]; exists {
 		entry.count++
-		// Keep the latest timestamp as representative.
 		if event.TimestampMs > entry.event.TimestampMs {
 			entry.event.TimestampMs = event.TimestampMs
 		}
 	} else {
 		vidBuf[text] = &mergeEntry{event: event, count: 1}
 	}
+}
+
+// ForgetVideoID removes a video from the active set. Called by the aggregator
+// when a FetchWindow returns empty, so stale IDs don't accumulate indefinitely.
+// New events for the same video re-add it via Submit.
+func (b *Batcher) ForgetVideoID(videoID string) {
+	b.mu.Lock()
+	delete(b.seen, videoID)
+	b.mu.Unlock()
 }
 
 // ActiveVideoIDs returns all video IDs that have ever been submitted.
@@ -122,9 +129,13 @@ func (b *Batcher) flush() {
 	for videoID, entries := range snapshot {
 		events := make([]*pb.InteractionEvent, 0, len(entries))
 		for _, e := range entries {
-			merged := cloneEvent(e.event)
-			merged.RepeatCount = e.count
-			events = append(events, merged)
+			events = append(events, &pb.InteractionEvent{
+				VideoId:     e.event.VideoId,
+				TimestampMs: e.event.TimestampMs,
+				RawText:     e.event.RawText,
+				UserId:      e.event.UserId,
+				RepeatCount: e.count,
+			})
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -134,12 +145,4 @@ func (b *Batcher) flush() {
 		}
 		cancel()
 	}
-}
-
-func cloneEvent(e *pb.InteractionEvent) *pb.InteractionEvent {
-	c, ok := proto.Clone(e).(*pb.InteractionEvent)
-	if !ok {
-		panic("proto.Clone returned unexpected type")
-	}
-	return c
 }

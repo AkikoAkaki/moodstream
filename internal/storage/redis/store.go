@@ -54,15 +54,20 @@ func (s *Store) eventKey(videoID string) string {
 	return fmt.Sprintf("stream:%s:events", videoID)
 }
 
-func (s *Store) PushEvent(ctx context.Context, videoID string, event *pb.InteractionEvent) error {
+func marshalZ(event *pb.InteractionEvent) (redis.Z, error) {
 	data, err := json.Marshal(event)
 	if err != nil {
-		return fmt.Errorf("marshal event: %w", err)
+		return redis.Z{}, fmt.Errorf("marshal event: %w", err)
 	}
-	return s.client.ZAdd(ctx, s.eventKey(videoID), redis.Z{
-		Score:  float64(event.TimestampMs),
-		Member: data,
-	}).Err()
+	return redis.Z{Score: float64(event.TimestampMs), Member: data}, nil
+}
+
+func (s *Store) PushEvent(ctx context.Context, videoID string, event *pb.InteractionEvent) error {
+	z, err := marshalZ(event)
+	if err != nil {
+		return err
+	}
+	return s.client.ZAdd(ctx, s.eventKey(videoID), z).Err()
 }
 
 // PushEvents writes a batch of events in a single Redis pipeline round-trip.
@@ -73,17 +78,13 @@ func (s *Store) PushEvents(ctx context.Context, videoID string, events []*pb.Int
 	key := s.eventKey(videoID)
 	pipe := s.client.Pipeline()
 	for _, event := range events {
-		data, err := json.Marshal(event)
+		z, err := marshalZ(event)
 		if err != nil {
-			return fmt.Errorf("marshal event: %w", err)
+			return err
 		}
-		pipe.ZAdd(ctx, key, redis.Z{
-			Score:  float64(event.TimestampMs),
-			Member: data,
-		})
+		pipe.ZAdd(ctx, key, z)
 	}
-	_, err := pipe.Exec(ctx)
-	if err != nil {
+	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("pipeline push events: %w", err)
 	}
 	return nil

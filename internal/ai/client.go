@@ -102,7 +102,6 @@ func (c *Client) Analyze(ctx context.Context, events []*pb.InteractionEvent) (*R
 	}
 
 	content := strings.TrimSpace(chatResp.Choices[0].Message.Content)
-	// Strip markdown code fences if present
 	content = strings.TrimPrefix(content, "```json")
 	content = strings.TrimPrefix(content, "```")
 	content = strings.TrimSuffix(content, "```")

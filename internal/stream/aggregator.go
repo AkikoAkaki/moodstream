@@ -89,13 +89,13 @@ func (a *Aggregator) processVideo(videoID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	// Drain all events regardless of video timestamp.
 	events, err := a.store.FetchWindow(ctx, videoID, 0, math.MaxInt64)
 	if err != nil {
 		log.Printf("aggregator: fetch failed for %q: %v", videoID, err)
 		return
 	}
 	if len(events) == 0 {
+		a.batcher.ForgetVideoID(videoID)
 		return
 	}
 
@@ -104,8 +104,9 @@ func (a *Aggregator) processVideo(videoID string) {
 		events = events[:a.maxBatchSize]
 	}
 
-	// Compute window bounds from event timestamps.
+	// Single pass: compute window bounds and total event count.
 	var minTs, maxTs int64
+	var totalCount int32
 	minTs = math.MaxInt64
 	for _, e := range events {
 		if e.TimestampMs < minTs {
@@ -114,11 +115,6 @@ func (a *Aggregator) processVideo(videoID string) {
 		if e.TimestampMs > maxTs {
 			maxTs = e.TimestampMs
 		}
-	}
-
-	// Count total events (accounting for repeat_count).
-	var totalCount int32
-	for _, e := range events {
 		c := e.RepeatCount
 		if c <= 0 {
 			c = 1

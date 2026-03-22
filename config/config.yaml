@@ -16,6 +16,6 @@ stream:
   max_batch_size: 200     # max events sampled per window before LLM call
 
 ai:
-  api_key: ""             # set via DDQ_AI_API_KEY env var
-  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
-  model: "qwen-plus"
+  api_key: "sk-a64a6f0d4b294fa584d6bf4af939a134"  # set via DDQ_AI_API_KEY env var
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-chat"

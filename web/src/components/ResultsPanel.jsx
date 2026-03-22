@@ -62,7 +62,7 @@ export default function ResultsPanel({ results }) {
       </div>
       <div className="panel-body">
         {results.map((r, i) => (
-          <div key={`${r.processed_at}-${i}`} className="result-card">
+          <div key={r.processed_at} className="result-card">
             <div className="result-header">
               <span className="result-video">{r.video_id}</span>
               <span className="result-time">

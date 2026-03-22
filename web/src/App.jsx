@@ -2,32 +2,37 @@ import { useState, useEffect, useRef } from "react";
 import InjectPanel from "./components/InjectPanel";
 import ResultsPanel from "./components/ResultsPanel";
 
+const MAX_RESULTS = 50;
+const SSE_STATUS = { CONNECTING: "connecting", CONNECTED: "connected", ERROR: "error" };
+
 export default function App() {
   const [results, setResults] = useState([]);
-  const [sseStatus, setSseStatus] = useState("connecting");
+  const [sseStatus, setSseStatus] = useState(SSE_STATUS.CONNECTING);
   const eventSourceRef = useRef(null);
 
   useEffect(() => {
     const es = new EventSource("/stream/results");
     eventSourceRef.current = es;
 
-    es.onopen = () => setSseStatus("connected");
+    es.onopen = () => setSseStatus(SSE_STATUS.CONNECTED);
 
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        setResults((prev) => [data, ...prev].slice(0, 50));
+        setResults((prev) => {
+          const next = [data, ...prev];
+          return next.length > MAX_RESULTS ? next.slice(0, MAX_RESULTS) : next;
+        });
       } catch {
         /* ignore non-JSON lines (e.g. : connected) */
       }
     };
 
     es.onerror = () => {
-      setSseStatus("error");
-      // EventSource auto-reconnects
+      setSseStatus(SSE_STATUS.ERROR);
       setTimeout(() => {
         if (es.readyState === EventSource.CONNECTING) {
-          setSseStatus("connecting");
+          setSseStatus(SSE_STATUS.CONNECTING);
         }
       }, 1000);
     };
@@ -43,11 +48,11 @@ export default function App() {
         </div>
         <div className="status">
           <span
-            className={`status-dot ${sseStatus === "connected" ? "connected" : sseStatus === "error" ? "error" : ""}`}
+            className={`status-dot ${sseStatus === SSE_STATUS.CONNECTED ? "connected" : sseStatus === SSE_STATUS.ERROR ? "error" : ""}`}
           />
-          {sseStatus === "connected"
+          {sseStatus === SSE_STATUS.CONNECTED
             ? "Live"
-            : sseStatus === "error"
+            : sseStatus === SSE_STATUS.ERROR
               ? "Disconnected"
               : "Connecting..."}
         </div>

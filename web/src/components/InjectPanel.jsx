@@ -11,6 +11,9 @@ const PRESETS = [
   "前方高能",
 ];
 
+const MAX_SENT_HISTORY = 30;
+const BURST_COUNT = 20;
+
 export default function InjectPanel() {
   const [videoId, setVideoId] = useState("demo");
   const [rawText, setRawText] = useState("");
@@ -35,12 +38,10 @@ export default function InjectPanel() {
           body: JSON.stringify(body),
         });
         if (res.ok) {
-          setSent((prev) =>
-            [{ text: body.raw_text, ts: body.timestamp_ms }, ...prev].slice(
-              0,
-              30,
-            ),
-          );
+          setSent((prev) => {
+            const next = [{ text: body.raw_text, ts: body.timestamp_ms }, ...prev];
+            return next.length > MAX_SENT_HISTORY ? next.slice(0, MAX_SENT_HISTORY) : next;
+          });
           if (!text) setRawText("");
           setTimestampMs((t) => t + 100);
         }
@@ -52,10 +53,9 @@ export default function InjectPanel() {
   );
 
   const burst = useCallback(
-    async (text, count = 20) => {
-      for (let i = 0; i < count; i++) {
-        await send(text);
-      }
+    (text) => {
+      const requests = Array.from({ length: BURST_COUNT }, () => send(text));
+      return Promise.all(requests);
     },
     [send],
   );
@@ -120,7 +120,9 @@ export default function InjectPanel() {
         </form>
 
         <div style={{ marginTop: 20 }}>
-          <div className="form-label">Quick send (click = x1, long-press or shift+click = x20)</div>
+          <div className="form-label">
+            Quick send — click × 1, shift+click × {BURST_COUNT}
+          </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
             {PRESETS.map((p) => (
               <button
