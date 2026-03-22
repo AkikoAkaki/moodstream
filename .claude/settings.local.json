@@ -10,7 +10,13 @@
       "Bash(curl:*)",
       "Bash(go build:*)",
       "Bash(go mod:*)",
-      "Bash(go test:*)"
+      "Bash(go test:*)",
+      "Bash(claude doctor:*)",
+      "Bash(make test:*)",
+      "Bash(make lint:*)",
+      "Bash(make proto:*)",
+      "Bash(make build-server:*)",
+      "Bash(npx vite:*)"
     ]
   }
 }

@@ -18,11 +18,28 @@ type Store struct {
 	namespace string // non-empty in tests for per-test key isolation
 }
 
+// Options configures a Redis store.
+type Options struct {
+	Addr     string
+	Password string
+	DB       int
+}
+
 var _ storage.EventStore = (*Store)(nil)
 
+// NewStore creates a store connecting to the given address (password-less, DB 0).
 func NewStore(addr string) *Store {
+	return NewStoreWith(Options{Addr: addr})
+}
+
+// NewStoreWith creates a store with full Redis options.
+func NewStoreWith(opts Options) *Store {
 	return &Store{
-		client: redis.NewClient(&redis.Options{Addr: addr}),
+		client: redis.NewClient(&redis.Options{
+			Addr:     opts.Addr,
+			Password: opts.Password,
+			DB:       opts.DB,
+		}),
 	}
 }
 
@@ -37,15 +54,40 @@ func (s *Store) eventKey(videoID string) string {
 	return fmt.Sprintf("stream:%s:events", videoID)
 }
 
-func (s *Store) PushEvent(ctx context.Context, videoID string, event *pb.InteractionEvent) error {
+func marshalZ(event *pb.InteractionEvent) (redis.Z, error) {
 	data, err := json.Marshal(event)
 	if err != nil {
-		return fmt.Errorf("marshal event: %w", err)
+		return redis.Z{}, fmt.Errorf("marshal event: %w", err)
 	}
-	return s.client.ZAdd(ctx, s.eventKey(videoID), redis.Z{
-		Score:  float64(event.TimestampMs),
-		Member: data, // pass []byte directly — avoids string copy
-	}).Err()
+	return redis.Z{Score: float64(event.TimestampMs), Member: data}, nil
+}
+
+func (s *Store) PushEvent(ctx context.Context, videoID string, event *pb.InteractionEvent) error {
+	z, err := marshalZ(event)
+	if err != nil {
+		return err
+	}
+	return s.client.ZAdd(ctx, s.eventKey(videoID), z).Err()
+}
+
+// PushEvents writes a batch of events in a single Redis pipeline round-trip.
+func (s *Store) PushEvents(ctx context.Context, videoID string, events []*pb.InteractionEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+	key := s.eventKey(videoID)
+	pipe := s.client.Pipeline()
+	for _, event := range events {
+		z, err := marshalZ(event)
+		if err != nil {
+			return err
+		}
+		pipe.ZAdd(ctx, key, z)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("pipeline push events: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) FetchWindow(ctx context.Context, videoID string, fromMs, toMs int64) ([]*pb.InteractionEvent, error) {
@@ -60,7 +102,6 @@ func (s *Store) FetchWindow(ctx context.Context, videoID string, fromMs, toMs in
 	for _, raw := range results {
 		var e pb.InteractionEvent
 		if err := json.Unmarshal([]byte(raw), &e); err != nil {
-			// Data was already removed from Redis by the Lua script — log so it's visible.
 			log.Printf("store: FetchWindow: dropping corrupt event for video %q: %v (raw: %.80s)", videoID, err, raw)
 			continue
 		}

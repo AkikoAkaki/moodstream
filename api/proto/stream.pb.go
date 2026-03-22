@@ -7,11 +7,12 @@
 package pb
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -28,6 +29,7 @@ type InteractionEvent struct {
 	TimestampMs   int64                  `protobuf:"varint,2,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"` // video playback position in milliseconds (not wall clock)
 	RawText       string                 `protobuf:"bytes,3,opt,name=raw_text,json=rawText,proto3" json:"raw_text,omitempty"`              // danmu / comment content
 	UserId        string                 `protobuf:"bytes,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                 // optional sender identifier
+	RepeatCount   int32                  `protobuf:"varint,5,opt,name=repeat_count,json=repeatCount,proto3" json:"repeat_count,omitempty"` // number of merged identical events (set by batcher; 0 means 1)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -88,6 +90,13 @@ func (x *InteractionEvent) GetUserId() string {
 		return x.UserId
 	}
 	return ""
+}
+
+func (x *InteractionEvent) GetRepeatCount() int32 {
+	if x != nil {
+		return x.RepeatCount
+	}
+	return 0
 }
 
 // PushAck is returned after a client streaming session completes.
@@ -240,12 +249,13 @@ var File_api_proto_stream_proto protoreflect.FileDescriptor
 
 const file_api_proto_stream_proto_rawDesc = "" +
 	"\n" +
-	"\x16api/proto/stream.proto\x12\x06stream\"\x84\x01\n" +
+	"\x16api/proto/stream.proto\x12\x06stream\"\xa7\x01\n" +
 	"\x10InteractionEvent\x12\x19\n" +
 	"\bvideo_id\x18\x01 \x01(\tR\avideoId\x12!\n" +
 	"\ftimestamp_ms\x18\x02 \x01(\x03R\vtimestampMs\x12\x19\n" +
 	"\braw_text\x18\x03 \x01(\tR\arawText\x12\x17\n" +
-	"\auser_id\x18\x04 \x01(\tR\x06userId\"9\n" +
+	"\auser_id\x18\x04 \x01(\tR\x06userId\x12!\n" +
+	"\frepeat_count\x18\x05 \x01(\x05R\vrepeatCount\"9\n" +
 	"\aPushAck\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\"\xef\x01\n" +

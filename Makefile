@@ -1,4 +1,4 @@
-.PHONY: up down run-server proto fmt lint test build-server ci-local
+.PHONY: up down run-server proto fmt lint test build-server ci-local web-dev web-build
 
 up:
 	docker-compose -f deploy/docker-compose.yaml up -d
@@ -26,6 +26,12 @@ test:
 build-server:
 	mkdir -p ./bin
 	go build -v -o ./bin/server ./cmd/server
+
+web-dev:
+	cd web && npm run dev
+
+web-build:
+	cd web && npm run build
 
 ci-local: lint test build-server
 	@echo "Local CI checks passed"
