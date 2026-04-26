@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
-	"github.com/AkikoAkaki/async-task-platform/internal/ai"
-	"github.com/AkikoAkaki/async-task-platform/internal/storage"
+	pb "github.com/AkikoAkaki/moodstream/api/proto"
+	"github.com/AkikoAkaki/moodstream/internal/ai"
+	"github.com/AkikoAkaki/moodstream/internal/storage"
 )
 
 // Aggregator implements a wall-clock tumbling window that periodically

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
+	pb "github.com/AkikoAkaki/moodstream/api/proto"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )

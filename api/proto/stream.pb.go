@@ -273,7 +273,7 @@ const file_api_proto_stream_proto_rawDesc = "" +
 	"\fprocessed_at\x18\a \x01(\x03R\vprocessedAt2J\n" +
 	"\rStreamService\x129\n" +
 	"\n" +
-	"PushEvents\x12\x18.stream.InteractionEvent\x1a\x0f.stream.PushAck(\x01B8Z6github.com/AkikoAkaki/async-task-platform/api/proto;pbb\x06proto3"
+	"PushEvents\x12\x18.stream.InteractionEvent\x1a\x0f.stream.PushAck(\x01B8Z6github.com/AkikoAkaki/moodstream/api/proto;pbb\x06proto3"
 
 var (
 	file_api_proto_stream_proto_rawDescOnce sync.Once

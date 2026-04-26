@@ -6,7 +6,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/AkikoAkaki/async-task-platform/internal/stream"
+	"github.com/AkikoAkaki/moodstream/internal/stream"
 )
 
 // SSEHandler returns an http.HandlerFunc that streams WindowResult events

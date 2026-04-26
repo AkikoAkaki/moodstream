@@ -3,7 +3,7 @@ package stream
 import (
 	"sync"
 
-	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
+	pb "github.com/AkikoAkaki/moodstream/api/proto"
 )
 
 // Broadcaster is a thread-safe fan-out hub for WindowResult messages.

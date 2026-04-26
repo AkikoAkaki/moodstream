@@ -1,5 +1,5 @@
 app:
-  name: "async-task-platform"
+  name: "moodstream"
   env: "local" # local, dev, prod
 
 server:

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
-	"github.com/AkikoAkaki/async-task-platform/internal/stream"
+	pb "github.com/AkikoAkaki/moodstream/api/proto"
+	"github.com/AkikoAkaki/moodstream/internal/stream"
 )
 
 // PushHandler returns an http.HandlerFunc that accepts a JSON-encoded

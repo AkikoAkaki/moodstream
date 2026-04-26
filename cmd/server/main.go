@@ -11,12 +11,12 @@ import (
 	"syscall"
 	"time"
 
-	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
-	"github.com/AkikoAkaki/async-task-platform/internal/ai"
-	"github.com/AkikoAkaki/async-task-platform/internal/conf"
-	"github.com/AkikoAkaki/async-task-platform/internal/handler"
-	redisstore "github.com/AkikoAkaki/async-task-platform/internal/storage/redis"
-	"github.com/AkikoAkaki/async-task-platform/internal/stream"
+	pb "github.com/AkikoAkaki/moodstream/api/proto"
+	"github.com/AkikoAkaki/moodstream/internal/ai"
+	"github.com/AkikoAkaki/moodstream/internal/conf"
+	"github.com/AkikoAkaki/moodstream/internal/handler"
+	redisstore "github.com/AkikoAkaki/moodstream/internal/storage/redis"
+	"github.com/AkikoAkaki/moodstream/internal/stream"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )

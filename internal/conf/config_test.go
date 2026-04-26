@@ -87,8 +87,8 @@ func TestLoadWithOptions_Defaults(t *testing.T) {
 		t.Fatalf("LoadWithOptions() unexpected error: %v", err)
 	}
 
-	if cfg.App.Name != "async-task-platform" {
-		t.Fatalf("App.Name = %q, want async-task-platform", cfg.App.Name)
+	if cfg.App.Name != "moodstream" {
+		t.Fatalf("App.Name = %q, want moodstream", cfg.App.Name)
 	}
 	if cfg.Server.GrpcPort != 9090 {
 		t.Fatalf("Server.GrpcPort = %d, want 9090", cfg.Server.GrpcPort)

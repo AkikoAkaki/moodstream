@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
-	"github.com/AkikoAkaki/async-task-platform/internal/storage"
+	pb "github.com/AkikoAkaki/moodstream/api/proto"
+	"github.com/AkikoAkaki/moodstream/internal/storage"
 )
 
 // Batcher is an in-memory "high-frequency repetition word merging" interceptor

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log"
 
-	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
-	"github.com/AkikoAkaki/async-task-platform/internal/storage"
+	pb "github.com/AkikoAkaki/moodstream/api/proto"
+	"github.com/AkikoAkaki/moodstream/internal/storage"
 	"github.com/redis/go-redis/v9"
 )
 
