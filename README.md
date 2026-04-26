@@ -1,4 +1,4 @@
-# Real-Time Multimodal Interaction Platform
+# Danmu Sentiment Aggregator
 
 [![Go Version](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)](https://go.dev/)
 [![Redis](https://img.shields.io/badge/Redis-7.x-DC382D?logo=redis&logoColor=white)](https://redis.io/)
