@@ -3,7 +3,7 @@
 # Override any key via env var with prefix DDQ_ (e.g. DDQ_REDIS_ADDR, DDQ_AI_API_KEY).
 
 app:
-  name: "async-task-platform"
+  name: "moodstream"
   env: "local"  # local | dev | prod
 
 server:

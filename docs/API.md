@@ -360,7 +360,7 @@ The API uses standard gRPC status codes:
 
 ```go
 import (
-    pb "github.com/AkikoAkaki/async-task-platform/api/proto"
+    pb "github.com/AkikoAkaki/moodstream/api/proto"
     "google.golang.org/grpc"
     "google.golang.org/grpc/credentials/insecure"
 )

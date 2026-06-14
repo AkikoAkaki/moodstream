@@ -207,7 +207,7 @@ Key configuration options in `config/config.yaml`:
 
 ```yaml
 app:
-  name: "async-task-platform"
+  name: "moodstream"
   env: "local"
 
 server:

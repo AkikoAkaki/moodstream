@@ -3,7 +3,7 @@ package storage
 import (
 	"context"
 
-	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
+	pb "github.com/AkikoAkaki/moodstream/api/proto"
 )
 
 // EventStore is the persistence contract for the stream processing layer.

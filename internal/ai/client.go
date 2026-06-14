@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	pb "github.com/AkikoAkaki/async-task-platform/api/proto"
+	pb "github.com/AkikoAkaki/moodstream/api/proto"
 )
 
 // Client calls an OpenAI-compatible chat completion API (e.g. Qwen).

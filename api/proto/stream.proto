@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package stream;
 
-option go_package = "github.com/AkikoAkaki/async-task-platform/api/proto;pb";
+option go_package = "github.com/AkikoAkaki/moodstream/api/proto;pb";
 
 // InteractionEvent is a single danmu/comment event from a video session.
 message InteractionEvent {

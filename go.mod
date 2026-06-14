@@ -1,4 +1,4 @@
-module github.com/AkikoAkaki/async-task-platform
+module github.com/AkikoAkaki/moodstream
 
 go 1.25.5
 

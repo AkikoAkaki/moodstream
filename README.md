@@ -1,12 +1,12 @@
-# Danmu Sentiment Aggregator
+# MoodStream
 
 [![Go Version](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)](https://go.dev/)
 [![Redis](https://img.shields.io/badge/Redis-7.x-DC382D?logo=redis&logoColor=white)](https://redis.io/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A real-time stream processing platform that ingests high-concurrency danmu (bullet comment) streams, performs LLM-based accessibility analysis using tumbling-window aggregation, and pushes results to clients via Server-Sent Events.
+> **Archived.** Experimental prototype — not production-ready and no longer maintained.
 
-Built on Go + Redis ZSet + Lua atomic operations. Originally a distributed delay queue MVP; refactored into an HCI-oriented interactive log processing system.
+A toy project exploring real-time danmu (bullet comment) emotion analysis with Go, Redis, and an LLM. Events are ingested via gRPC client streaming, aggregated in tumbling windows using Redis ZSets and Lua atomic operations, classified by a Qwen LLM, and broadcast to a React dashboard over SSE.
 
 ## Architecture
 
@@ -73,8 +73,6 @@ grpcurl -plaintext localhost:9090 list
 ```
 
 ### Frontend
-
-> **Note:** The React frontend (`web/`) and `api/proto/stream.proto` are under active development (Phase 4). The backend server and Redis pipeline are functional independently.
 
 ```bash
 cd web && npm install && npm run dev

@@ -150,7 +150,7 @@ func configureConfigSource(v *viper.Viper, opts LoadOptions) {
 }
 
 func applyDefaults(v *viper.Viper) {
-	v.SetDefault("app.name", "async-task-platform")
+	v.SetDefault("app.name", "moodstream")
 	v.SetDefault("app.env", "local")
 
 	v.SetDefault("server.port", 8080)
